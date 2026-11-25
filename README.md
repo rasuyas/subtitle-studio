@@ -1,5 +1,7 @@
 # Subtitle Studio
 
+**Version 0.2.0**
+
 **A local subtitle generator with alpha-channel export, plus a layout tool for turning landscape clips into vertical (9:16) videos.**
 
 Drop in a video, an audio file or a YouTube link. The app transcribes it with word-level timestamps, draws animated highlight subtitles, and exports either a finished vertical video or a **transparent subtitle-only overlay** you can drag straight into your editor.
@@ -63,7 +65,7 @@ Layouts are presets plus manual crop boxes. Automatic face detection is not impl
 
 ## Requirements
 
-- **Windows or Linux**
+- **Windows or Linux** (macOS support is not available yet)
 - **Python 3.10 or newer**
 - **FFmpeg and FFprobe** installed and available on your PATH
 - **NVIDIA GPU with CUDA 12.x** for fast transcription. Without CUDA it falls back to CPU, which is much slower.
@@ -78,17 +80,19 @@ git clone https://github.com/<your-username>/sub-generator.git
 cd sub-generator
 ```
 
-You can run Subtitle Studio either as a **Desktop App** (native window via `pywebview`) or **Web-based** (in your default browser). On first run, the launchers automatically create a virtual environment and install the requirements. The first transcription also downloads the Whisper model, so it takes longer.
+You can run Subtitle Studio as a **Desktop app** on Windows or in a **web browser** on Windows or Linux. On first run, the launchers automatically create a virtual environment and install the requirements. The first transcription also downloads the Whisper model, so it takes longer.
 
-### Desktop App (Windows)
+### Desktop app (Windows)
 
-- **Standard launch:** double-click `Subtitle Studio.bat` (or `Subtitle Studio.pyw` / `Subtitle Studio.vbs` to launch without a console window).
-- **Desktop & Start Menu shortcuts:** double-click `Create Desktop Shortcut.bat` to generate shortcuts on your Desktop and Start Menu.
+- **`Subtitle Studio.bat`**: standard Windows launch.
+- **`Subtitle Studio.pyw`**: launch the desktop window without a console window.
+- **`Subtitle Studio.vbs`**: launch silently through Windows Script Host.
+- **`Create Desktop Shortcut.bat`**: create shortcuts on the Desktop and in the Start Menu.
 
-### Web-based (Browser)
+### Web-based (browser)
 
-- **Windows:** double-click `launch.bat`
-- **Linux:** run `./launch.sh`
+- **Windows:** double-click `launch.bat`.
+- **Linux:** run `./launch.sh`.
 
 This starts the local server and opens `http://127.0.0.1:8000` in your web browser.
 
@@ -136,7 +140,7 @@ ct2-transformers-converter --model your/finetune --output_dir models/my-model --
 
 | Problem | Fix |
 |---|---|
-| Windows Defender or antivirus flags `.bat` / `.vbs` files | This is a common false positive because the launcher scripts use PowerShell and `WScript.Shell` to create shortcuts and start the app silently without a console window. You can inspect the scripts in Notepad or use the **Manual start** commands above instead. |
+| Windows Defender or antivirus warns about `.bat` / `.vbs` files downloaded from GitHub | This can be a false-positive warning. These Windows launcher scripts use PowerShell and `WScript.Shell` to create shortcuts or start the app without a console window. Inspect the files in a text editor before running them, or use the **Manual start (Terminal)** commands above instead. |
 | `open() got an unexpected keyword argument 'metadata_errors'` | PyAV 19 is too new for faster-whisper. Run `pip install "av<19"` inside the venv. The requirements file already pins this. |
 | `ffmpeg` or `ffprobe` not found | Install FFmpeg and add it to your PATH, then restart the launcher. |
 | CUDA or cuDNN errors when transcribing | Check that your NVIDIA driver supports CUDA 12. The app falls back to CPU if CUDA cannot load. |
@@ -171,13 +175,21 @@ When you report a bug, please paste the **full error text** from the terminal an
 
 ```
 sub-generator/
-  launch.bat, launch.sh, requirements.txt
+  Subtitle Studio.bat       Windows desktop launcher
+  Subtitle Studio.pyw       Python desktop launcher without a console
+  Subtitle Studio.vbs       silent Windows desktop launcher
+  Create Desktop Shortcut.bat
+                            creates Desktop and Start Menu shortcuts
+  launch.bat                Windows setup and launch script
+  launch.sh                 Linux setup and launch script
+  requirements.txt
   fonts/        subtitle fonts (downloaded on first run)
   models/       optional custom Whisper models
   workspace/    temporary files per job
   exports/      finished videos and overlays
   app/
     main.py             web server and API
+    desktop.py          native desktop window via pywebview
     downloader.py       YouTube download
     transcriber.py      speech-to-text
     subtitle_engine.py  phrase chunking and subtitle drawing
@@ -203,6 +215,7 @@ This project stands on the work of these open-source projects. Licenses are list
 | [Pillow](https://github.com/python-pillow/Pillow) | Drawing the subtitle frames | HPND |
 | [FastAPI](https://github.com/fastapi/fastapi) | Web server framework | MIT |
 | [Uvicorn](https://github.com/encode/uvicorn) | Runs the web server | BSD-3-Clause |
+| [pywebview](https://github.com/r0x0r/pywebview) | Native desktop window | BSD-3-Clause |
 | [python-multipart](https://github.com/Kludex/python-multipart) | File uploads | Apache-2.0 |
 | [NumPy](https://github.com/numpy/numpy) | Audio arrays | BSD-3-Clause |
 | [PyAV](https://github.com/PyAV-Org/PyAV) | Media library required by faster-whisper | BSD-3-Clause |
