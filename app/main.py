@@ -298,7 +298,7 @@ def chunk(body: dict = Body(...)):
 @app.post("/api/preview")
 def preview(body: dict = Body(...)):
     words = se.clean_words(body.get("words") or [])
-    img = se.render_state(words, body.get("active"), body.get("style"))
+    img = se.render_state(words, body.get("active"), body.get("style"), scale=0.5)
     buf = io.BytesIO()
     img.save(buf, "PNG", compress_level=1)
     return Response(buf.getvalue(), media_type="image/png")
