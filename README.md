@@ -78,17 +78,33 @@ git clone https://github.com/<your-username>/sub-generator.git
 cd sub-generator
 ```
 
+You can run Subtitle Studio either as a **Desktop App** (native window via `pywebview`) or **Web-based** (in your default browser). On first run, the launchers automatically create a virtual environment and install the requirements. The first transcription also downloads the Whisper model, so it takes longer.
+
+### Desktop App (Windows)
+
+- **Standard launch:** double-click `Subtitle Studio.bat` (or `Subtitle Studio.pyw` / `Subtitle Studio.vbs` to launch without a console window).
+- **Desktop & Start Menu shortcuts:** double-click `Create Desktop Shortcut.bat` to generate shortcuts on your Desktop and Start Menu.
+
+### Web-based (Browser)
+
 - **Windows:** double-click `launch.bat`
 - **Linux:** run `./launch.sh`
 
-The launcher creates a virtual environment, installs the requirements, starts the server and opens `http://127.0.0.1:8000` in your browser. The first transcription downloads the Whisper model, so it takes longer.
+This starts the local server and opens `http://127.0.0.1:8000` in your web browser.
 
-**Manual start**, if you prefer:
+### Manual start (Terminal) - Not Tested
+
+If you prefer running things manually:
 
 ```bash
 python -m venv venv
 # Windows: venv\Scripts\activate    Linux: source venv/bin/activate
 pip install -r requirements.txt
+
+# Desktop app:
+python -m app.desktop
+
+# Web-based (browser):
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
