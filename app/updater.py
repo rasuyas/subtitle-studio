@@ -24,7 +24,6 @@ PRESERVED_PATHS = {
     "fonts", "models", "presets", "settings", "user_presets", "user_settings",
     "venv", "workspace",
 }
-OVERWRITABLE_ROOT_FILES = {"version", "subtitle studio.pyw"}
 
 
 def _strip_version_prefix(value: str) -> str:
@@ -50,8 +49,8 @@ def _read_url(url: str, timeout: float, accept: str = "text/plain") -> bytes:
 
 
 def check_for_updates(root: Path, timeout: float = 4.0) -> dict:
-    current = _strip_version_prefix((root / "VERSION").read_text(encoding="utf-8").strip())
-    current_tuple = parse_version(current)
+    local_version = _strip_version_prefix((root / "VERSION").read_text(encoding="utf-8").strip())
+    local_version_tuple = parse_version(local_version)
     deadline = time.monotonic() + timeout
     api_error = None
     release = None
@@ -95,9 +94,9 @@ def check_for_updates(root: Path, timeout: float = 4.0) -> dict:
             )
 
     return {
-        "current_version": current,
+        "current_version": local_version,
         "latest_version": _strip_version_prefix(latest),
-        "update_available": parse_version(latest) > current_tuple,
+        "update_available": parse_version(latest) > local_version_tuple,
         "archive_url": archive_url,
         "source": source,
     }
@@ -105,8 +104,6 @@ def check_for_updates(root: Path, timeout: float = 4.0) -> dict:
 
 def _is_preserved(relative: PurePosixPath) -> bool:
     parts = [part.casefold() for part in relative.parts]
-    if len(parts) == 1 and parts[0] in OVERWRITABLE_ROOT_FILES:
-        return False
     if any(part in PRESERVED_PATHS for part in parts):
         return True
     filename = parts[-1] if parts else ""

@@ -163,10 +163,7 @@ class DesktopApi:
     def _check_update_worker(self):
         try:
             result = updater.check_for_updates(ROOT, timeout=4.0)
-            available = (
-                updater.parse_version(result["latest_version"])
-                > updater.parse_version(result["current_version"])
-            )
+            available = result["update_available"]
             state = "available" if available else "current"
             message = (
                 f"Version {result['latest_version']} is available."
