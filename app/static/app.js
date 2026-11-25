@@ -1193,6 +1193,7 @@ function initUpdaterUI(d) {
   async function refresh() {
     try {
       const status = await d.get_update_status();
+      if (status.current_version) $('#appVersion').textContent = 'v' + status.current_version;
       statusText.textContent = status.message;
       statusText.classList.toggle('is-error', status.state === 'error');
       button.disabled = ['checking', 'downloading', 'applying', 'installing'].includes(status.state);

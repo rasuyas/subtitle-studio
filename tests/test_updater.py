@@ -41,6 +41,7 @@ class UpdaterTests(unittest.TestCase):
             root = Path(temp_dir) / "app"
             root.mkdir()
             (root / "VERSION").write_text("0.3.0", encoding="utf-8")
+            (root / "Subtitle Studio.pyw").write_text("old entry point", encoding="utf-8")
             (root / "requirements.txt").write_text("old-dependency\n", encoding="utf-8")
             (root / "fonts").mkdir()
             (root / "fonts" / "custom.ttf").write_bytes(b"custom font")
@@ -54,6 +55,7 @@ class UpdaterTests(unittest.TestCase):
             archive_path = Path(temp_dir) / "update.zip"
             with zipfile.ZipFile(archive_path, "w") as archive:
                 archive.writestr("subtitle-studio-main/VERSION", "0.3.2")
+                archive.writestr("subtitle-studio-main/Subtitle Studio.pyw", "updated entry point")
                 archive.writestr("subtitle-studio-main/requirements.txt", "new-dependency\n")
                 archive.writestr("subtitle-studio-main/app/main.py", "updated")
                 archive.writestr("subtitle-studio-main/fonts/default.ttf", b"new font")
@@ -64,6 +66,8 @@ class UpdaterTests(unittest.TestCase):
 
             self.assertTrue(apply_archive(archive_path, root))
             self.assertEqual((root / "VERSION").read_text(encoding="utf-8"), "0.3.2")
+            self.assertEqual((root / "Subtitle Studio.pyw").read_text(encoding="utf-8"), "updated entry point")
+            self.assertFalse((root / "subtitle-studio-main").exists())
             self.assertEqual((root / "app" / "main.py").read_text(encoding="utf-8"), "updated")
             self.assertEqual((root / "fonts" / "custom.ttf").read_bytes(), b"custom font")
             self.assertFalse((root / "fonts" / "default.ttf").exists())

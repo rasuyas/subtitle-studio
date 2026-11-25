@@ -24,6 +24,7 @@ PRESERVED_PATHS = {
     "fonts", "models", "presets", "settings", "user_presets", "user_settings",
     "venv", "workspace",
 }
+OVERWRITABLE_ROOT_FILES = {"version", "subtitle studio.pyw"}
 
 
 def _strip_version_prefix(value: str) -> str:
@@ -104,6 +105,8 @@ def check_for_updates(root: Path, timeout: float = 4.0) -> dict:
 
 def _is_preserved(relative: PurePosixPath) -> bool:
     parts = [part.casefold() for part in relative.parts]
+    if len(parts) == 1 and parts[0] in OVERWRITABLE_ROOT_FILES:
+        return False
     if any(part in PRESERVED_PATHS for part in parts):
         return True
     filename = parts[-1] if parts else ""

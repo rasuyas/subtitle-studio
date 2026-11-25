@@ -52,6 +52,27 @@ class DesktopUpdaterStatusTests(unittest.TestCase):
         self.assertIsNone(status["archive_url"])
         self.assertEqual(status["message"], "Up to date (v0.3.1)")
 
+    def test_local_version_ahead_of_remote_is_up_to_date(self):
+        api = desktop.DesktopApi.__new__(desktop.DesktopApi)
+        api._update_lock = threading.Lock()
+        api._update_status = {"state": "checking", "update_available": True}
+        result = {
+            "current_version": "0.3.5",
+            "latest_version": "v0.3.2",
+            "update_available": True,
+            "archive_url": "https://example.com/update.zip",
+            "source": "release",
+        }
+        with patch("app.desktop.updater.check_for_updates", return_value=result):
+            api._check_update_worker()
+
+        status = api.get_update_status()
+        self.assertEqual(status["state"], "current")
+        self.assertFalse(status["update_available"])
+        self.assertIsNone(status["archive_url"])
+        self.assertEqual(status["current_version"], "0.3.5")
+        self.assertEqual(status["message"], "Up to date (v0.3.5)")
+
     def test_staged_update_clears_available_flag_and_archive_url(self):
         api = desktop.DesktopApi.__new__(desktop.DesktopApi)
         api._update_lock = threading.Lock()
