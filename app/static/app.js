@@ -26,7 +26,7 @@ const SECTIONS = [
   { title: 'Highlight', show: () => true, controls: [
     { k: 'style', label: 'Style', t: 'select', opts: [['pill', 'Red rounded pill'], ['pop', 'Color pop'], ['popin', 'Word-by-word pop-in']] }] },
   { title: 'Text', show: () => true, controls: [
-    { k: 'font', label: 'Font', t: 'select', opts: [] },
+    { k: 'font', label: 'Font', t: 'select', searchable: true, opts: [] },
     { k: 'font_size', label: 'Size', t: 'range', min: 40, max: 140, step: 1 },
     { k: 'y_pos', label: 'Vertical position', t: 'range', min: .1, max: .9, step: .01, fmt: v => Math.round(v * 100) + '%' },
     { k: 'uppercase', label: 'All caps', t: 'check' },
@@ -63,15 +63,44 @@ function buildControls(host, sections, obj, onChange) {
       row.className = 'row';
       const val = `<span class="val"></span>`;
       let input;
-      if (c.t === 'select') input = `<select class="field" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
+      if (c.t === 'select') {
+        const select = `<select class="field" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
+        input = c.searchable
+          ? `<div><input class="field" type="search" placeholder="Search fonts..." aria-label="Search fonts" style="margin-bottom:5px">${select}</div>`
+          : select;
+      }
       else if (c.t === 'range') input = `<input type="range" data-k="${c.k}" min="${c.min}" max="${c.max}" step="${c.step}">`;
       else if (c.t === 'color') input = `<input type="color" data-k="${c.k}">`;
       else input = `<input type="checkbox" data-k="${c.k}">`;
       row.innerHTML = `<span>${c.label}</span><div>${input}</div>${c.t === 'range' ? val : '<span></span>'}`;
       const el = $('[data-k]', row);
+      const search = c.searchable ? $('input[type="search"]', row) : null;
       const sync = () => { const v = $('.val', row); if (v) v.textContent = c.fmt ? c.fmt(obj[c.k]) : obj[c.k]; };
       if (c.t === 'check') el.checked = !!obj[c.k]; else el.value = obj[c.k];
       sync();
+      if (search) search.addEventListener('input', () => {
+        const query = search.value.toLowerCase();
+        const matches = c.opts.filter(([value, label]) => `${value} ${label}`.toLowerCase().includes(query));
+        el.replaceChildren();
+        if (!matches.length) {
+          const option = document.createElement('option');
+          option.textContent = 'No matching fonts';
+          option.disabled = true;
+          option.selected = true;
+          el.appendChild(option);
+        } else {
+          matches.forEach(([value, label]) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            el.appendChild(option);
+          });
+          const selected = matches.find(([value]) => value === obj[c.k]) || matches[0];
+          el.value = selected[0];
+          obj[c.k] = selected[0];
+        }
+        onChange(c.k);
+      });
       el.addEventListener('input', () => {
         obj[c.k] = c.t === 'check' ? el.checked : (c.t === 'range' ? parseFloat(el.value) : el.value);
         sync(); onChange(c.k);
