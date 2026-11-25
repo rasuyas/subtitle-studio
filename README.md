@@ -1,12 +1,12 @@
 # Subtitle Studio
 
-**Version 0.2.0**
-
 **A local subtitle generator with alpha-channel export, plus a layout tool for turning landscape clips into vertical (9:16) videos.**
 
 Drop in a video, an audio file or a YouTube link. The app transcribes it with word-level timestamps, draws animated highlight subtitles, and exports either a finished vertical video or a **transparent subtitle-only overlay** you can drag straight into your editor.
 
 Everything runs on your own computer. Nothing is uploaded anywhere.
+
+**[Click here to install](#install-and-run)**
 
 > [!WARNING]
 > **Work in progress.** It already works well for short videos in the author's own use, but it is still buggy and not optimized. Expect rough edges, and see [Known issues](#known-issues).
