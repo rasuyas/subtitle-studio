@@ -25,6 +25,7 @@ export a finished vertical video or a transparent subtitle overlay.
 | Feature | Description |
 | --- | --- |
 | 🎙️ **Transcribe** | Turn video or audio into text with Whisper |
+| 📥 **YouTube download** | Use yt-dlp to pull an individual video from your own channel by pasting its YouTube link |
 | ✏️ **Edit** | Fine-tune captions at the word level |
 | 🎨 **Style** | Customize animated word highlights |
 | 📱 **Export** | Render a finished vertical video |
@@ -39,6 +40,9 @@ export a finished vertical video or a transparent subtitle overlay.
 ![Subtitle Studio with transcript editing and export controls](docs/images/transcript-export.png)
 
 *Edit word-level captions, fine-tune highlights, and choose an export format.*
+
+*The screenshots use a video from Windah Basudara's YouTube channel as an example.
+The video and its rights belong to Windah Basudara.*
 
 ## 🚀 Get started
 
