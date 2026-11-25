@@ -1,0 +1,13 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+pywebview>=5.0
+faster-whisper>=1.1.0
+# PyAV 19 removed an argument faster-whisper 1.2.x still passes (open() ... 'metadata_errors')
+av>=11,<19
+Pillow>=10.3
+yt-dlp>=2025.1.1
+numpy
+# CUDA 12 runtime libs for ctranslate2 (skip if you already have CUDA 12 + cuDNN 9 installed system-wide)
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*
