@@ -219,7 +219,7 @@ def build_timeline(phrases: list[dict], total: float, fps: float = 30.0,
 def _layout(texts, font, st, canvas_w: int = W):
     """Greedy line wrap. Returns list of lines; each line = list of (word_idx, x, width)."""
     space = font.getlength(" ")
-    gap = space + (st["pad_x"] if st["style"] == "pill" else 0)
+    gap = space
     max_w = canvas_w * 0.9
     lines, line, x = [], [], 0.0
     for i, t in enumerate(texts):
