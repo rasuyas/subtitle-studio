@@ -26,7 +26,7 @@ const SECTIONS = [
   { title: 'Highlight', show: () => true, controls: [
     { k: 'style', label: 'Style', t: 'select', opts: [['pill', 'Red rounded pill'], ['pop', 'Color pop'], ['popin', 'Word-by-word pop-in']] }] },
   { title: 'Text', show: () => true, controls: [
-    { k: 'font', label: 'Font', t: 'select', opts: [] },
+    { k: 'font', label: 'Font', t: 'select', searchable: true, opts: [] },
     { k: 'font_size', label: 'Size', t: 'range', min: 40, max: 140, step: 1 },
     { k: 'y_pos', label: 'Vertical position', t: 'range', min: .1, max: .9, step: .01, fmt: v => Math.round(v * 100) + '%' },
     { k: 'uppercase', label: 'All caps', t: 'check' },
@@ -48,8 +48,10 @@ const SECTIONS = [
     { k: 'pad_x', label: 'Padding X', t: 'range', min: 0, max: 60, step: 1 },
     { k: 'pad_y', label: 'Padding Y', t: 'range', min: 0, max: 40, step: 1 }] },
   { title: 'Active word', show: () => S.style.style === 'pop', controls: [
-    { k: 'pop_color', label: 'Color', t: 'color' },
-    { k: 'pop_scale', label: 'Scale', t: 'range', min: 1, max: 1.4, step: .01, fmt: v => Math.round(v * 100) + '%' }] },
+    { k: 'pop_color', label: 'Color', t: 'color' }] },
+  { title: 'Pop animation', show: () => S.style.style === 'pill' || S.style.style === 'pop', controls: [
+    { k: 'pop_scale', label: 'Pop scale', t: 'range', min: 1, max: 1.4, step: .01, fmt: v => Math.round(v * 100) + '%' },
+    { k: 'pop_duration', label: 'Pop speed', t: 'range', min: 0, max: .35, step: .01, fmt: v => Math.round(v * 1000) + 'ms' }] },
 ];
 
 function buildControls(host, sections, obj, onChange) {
@@ -63,15 +65,44 @@ function buildControls(host, sections, obj, onChange) {
       row.className = 'row';
       const val = `<span class="val"></span>`;
       let input;
-      if (c.t === 'select') input = `<select class="field" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
+      if (c.t === 'select') {
+        const select = `<select class="field" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
+        input = c.searchable
+          ? `<div><input class="field" type="search" placeholder="Search fonts..." aria-label="Search fonts" style="margin-bottom:5px">${select}</div>`
+          : select;
+      }
       else if (c.t === 'range') input = `<input type="range" data-k="${c.k}" min="${c.min}" max="${c.max}" step="${c.step}">`;
       else if (c.t === 'color') input = `<input type="color" data-k="${c.k}">`;
       else input = `<input type="checkbox" data-k="${c.k}">`;
       row.innerHTML = `<span>${c.label}</span><div>${input}</div>${c.t === 'range' ? val : '<span></span>'}`;
       const el = $('[data-k]', row);
+      const search = c.searchable ? $('input[type="search"]', row) : null;
       const sync = () => { const v = $('.val', row); if (v) v.textContent = c.fmt ? c.fmt(obj[c.k]) : obj[c.k]; };
       if (c.t === 'check') el.checked = !!obj[c.k]; else el.value = obj[c.k];
       sync();
+      if (search) search.addEventListener('input', () => {
+        const query = search.value.toLowerCase();
+        const matches = c.opts.filter(([value, label]) => `${value} ${label}`.toLowerCase().includes(query));
+        el.replaceChildren();
+        if (!matches.length) {
+          const option = document.createElement('option');
+          option.textContent = 'No matching fonts';
+          option.disabled = true;
+          option.selected = true;
+          el.appendChild(option);
+        } else {
+          matches.forEach(([value, label]) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            el.appendChild(option);
+          });
+          const selected = matches.find(([value]) => value === obj[c.k]) || matches[0];
+          el.value = selected[0];
+          obj[c.k] = selected[0];
+        }
+        onChange(c.k);
+      });
       el.addEventListener('input', () => {
         obj[c.k] = c.t === 'check' ? el.checked : (c.t === 'range' ? parseFloat(el.value) : el.value);
         sync(); onChange(c.k);
@@ -171,7 +202,11 @@ function setPlayLabels() {
 }
 
 function stopSampleLoop() {
-  if (sampleTimer) { clearInterval(sampleTimer); sampleTimer = null; }
+  if (sampleTimer) {
+    clearInterval(sampleTimer);
+    sampleTimer = null;
+    if (!S.job) refreshLivePreview(S.phrases.length ? S.selPhrase : -1, S.selWord, false, null);
+  }
   setPlayLabels();
 }
 
@@ -199,18 +234,29 @@ function seekTo(t) {
   updateTimeUI(clamped);
   if (vid.readyState >= 1) vid.currentTime = clamped;
   drawLayoutFrame();
-  syncSubtitleToTime(clamped, !vid.paused);
+  syncSubtitleToTime(clamped, false);
 }
 
 function togglePlay() {
   if (!S.job) {
     if (sampleTimer) { stopSampleLoop(); return; }
     setPlayLabels();
+    let sampleElapsed = 0;
     sampleTimer = setInterval(() => {
+      sampleElapsed += 33 / 1000;
       const ph = S.phrases[S.selPhrase] || { words: SAMPLE };
-      S.selWord = (S.selWord + 1) % ph.words.length;
-      scheduleOverlay();
-    }, 450);
+      if (sampleElapsed >= 0.45) {
+        S.selWord = (S.selWord + 1) % ph.words.length;
+        sampleElapsed = 0;
+      }
+      const animT = quantizeAnimT(sampleElapsed);
+      refreshLivePreview(
+        S.phrases.length ? S.selPhrase : -1,
+        S.selWord,
+        true,
+        animT
+      );
+    }, 33);
     setPlayLabels();
     return;
   }
@@ -565,6 +611,12 @@ let ovlVer = 0, ovlController = null, ovlTargetKey = '', ovlActiveKey = '';
 let overlayRefreshTimer = null;
 const ovlCache = new Map();
 
+function quantizeAnimT(elapsed) {
+  const duration = Number(S.style.pop_duration || 0);
+  if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed >= duration || duration <= 0) return null;
+  return Math.round(elapsed * 30) / 30;
+}
+
 function cancelOverlayRender() {
   if (ovlController) ovlController.abort();
   ovlController = null;
@@ -590,22 +642,22 @@ function setOverlayBlob(url) {
   }
 }
 
-function overlayStateKey(pi, wi, ver) {
+function overlayStateKey(pi, wi, ver, animT = null) {
   const ph = S.phrases[pi];
   const active = ph ? Math.max(0, Math.min(wi, ph.words.length - 1)) : Math.max(0, Math.min(S.selWord, SAMPLE.length - 1));
-  return `${ver}:${ph ? pi : 'sample'}:${active}`;
+  return `${ver}:${ph ? pi : 'sample'}:${active}:${animT === null ? 'static' : animT.toFixed(4)}`;
 }
 
-async function fetchOverlayState(pi, wi, ver, signal) {
+async function fetchOverlayState(pi, wi, ver, signal, animT = null) {
   const ph = S.phrases[pi];
   const words = ph ? ph.words : SAMPLE;
   const active = ph ? Math.max(0, Math.min(wi, ph.words.length - 1)) : Math.max(0, Math.min(S.selWord, SAMPLE.length - 1));
-  const key = overlayStateKey(pi, wi, ver);
+  const key = overlayStateKey(pi, wi, ver, animT);
   if (ovlCache.has(key)) return { key, url: ovlCache.get(key) };
-  const blob = await (await api('/api/preview', { words, active, style: S.style }, 'POST', signal)).blob();
+  const blob = await (await api('/api/preview', { words, active, style: S.style, anim_t: animT }, 'POST', signal)).blob();
   const url = URL.createObjectURL(blob);
   if (signal.aborted || ver !== ovlVer) { URL.revokeObjectURL(url); return null; }
-  if (ovlCache.size >= 150) {
+  if (ovlCache.size >= 240) {
     const oldest = ovlCache.keys().next().value;
     URL.revokeObjectURL(ovlCache.get(oldest));
     ovlCache.delete(oldest);
@@ -614,21 +666,33 @@ async function fetchOverlayState(pi, wi, ver, signal) {
   return { key, url };
 }
 
-function prefetchNextStates(pi, wi, ver, signal) {
-  if (!S.phrases.length) return;
-  let p = pi, w = wi;
-  for (let step = 0; step < 4; step++) {
-    w++;
-    if (w >= S.phrases[p].words.length) { p++; w = 0; }
-    if (p >= S.phrases.length) break;
-    const key = `${ver}:${p}:${w}`;
-    if (!ovlCache.has(key)) fetchOverlayState(p, w, ver, signal).catch(() => {});
+function prefetchNextStates(pi, wi, ver, signal, animT = null) {
+  if (S.phrases.length) {
+    let p = pi, w = wi;
+    for (let step = 0; step < 4; step++) {
+      w++;
+      if (w >= S.phrases[p].words.length) { p++; w = 0; }
+      if (p >= S.phrases.length) break;
+      const key = overlayStateKey(p, w, ver, null);
+      if (!ovlCache.has(key)) fetchOverlayState(p, w, ver, signal, null).catch(() => {});
+    }
+  }
+  if (animT !== null) {
+    const duration = Number(S.style.pop_duration || 0);
+    for (let step = 1; step <= 30; step++) {
+      const nextT = step / 30;
+      if (nextT >= duration) break;
+      const quantized = quantizeAnimT(nextT);
+      if (quantized === null) continue;
+      const key = overlayStateKey(pi, wi, ver, quantized);
+      if (!ovlCache.has(key)) fetchOverlayState(pi, wi, ver, signal, quantized).catch(() => {});
+    }
   }
 }
 
-async function renderTargetState(pi, wi, playing = !vid.paused) {
+async function renderTargetState(pi, wi, playing = !vid.paused, animT = null) {
   const ver = ovlVer;
-  const key = overlayStateKey(pi, wi, ver);
+  const key = overlayStateKey(pi, wi, ver, animT);
   if (ovlActiveKey === key || ovlTargetKey === key) return;
   cancelOverlayRender();
   const controller = new AbortController();
@@ -636,12 +700,12 @@ async function renderTargetState(pi, wi, playing = !vid.paused) {
   ovlTargetKey = key;
   let succeeded = false;
   try {
-    const res = await fetchOverlayState(pi, wi, ver, controller.signal);
+    const res = await fetchOverlayState(pi, wi, ver, controller.signal, animT);
     if (!res || controller.signal.aborted || ver !== ovlVer) return;
     ovlActiveKey = res.key;
     setOverlayBlob(res.url);
     succeeded = true;
-    if (S.phrases[pi] && playing) prefetchNextStates(pi, wi, ver, controller.signal);
+    if (S.phrases[pi] && playing) prefetchNextStates(pi, wi, ver, controller.signal, animT);
   } catch (e) {
     if (e.name !== 'AbortError') setStatus('render', 0, e.message, 'error');
   }
@@ -651,14 +715,14 @@ async function renderTargetState(pi, wi, playing = !vid.paused) {
   }
 }
 
-function refreshLivePreview(pi, wi, playing) {
+function refreshLivePreview(pi, wi, playing, animT = null) {
   if (overlayRefreshTimer !== null) clearTimeout(overlayRefreshTimer);
   overlayRefreshTimer = null;
   if (pi === undefined) {
     pi = S.phrases.length ? Math.min(S.selPhrase, S.phrases.length - 1) : -1;
     wi = S.phrases.length && pi >= 0 ? Math.min(S.selWord, S.phrases[pi].words.length - 1) : S.selWord;
   }
-  renderTargetState(pi, wi, playing);
+  renderTargetState(pi, wi, playing, animT);
 }
 
 function scheduleOverlay() {
@@ -722,9 +786,10 @@ function syncSubtitleToTime(t, playing) {
   S.selWord = hit.wi;
   updateActiveTranscriptMarks(hit.pi, hit.wi);
 
-  const key = `${ovlVer}:${hit.pi}:${hit.wi}`;
+  const animT = playing ? quantizeAnimT(t - S.phrases[hit.pi].words[hit.wi].start) : null;
+  const key = overlayStateKey(hit.pi, hit.wi, ovlVer, animT);
   if (ovlActiveKey === key) return;
-  refreshLivePreview(hit.pi, hit.wi, playing);
+  refreshLivePreview(hit.pi, hit.wi, playing, animT);
 }
 
 /* ------------------------------------------------------------------ chunking + transcript grid */
@@ -857,7 +922,9 @@ window.addEventListener('pywebviewready', enableDesktopUI);
   buildControls($('#styleControls'), SECTIONS, S.style, k => {
     if (k === 'style') refreshSectionVisibility();
     localStorage.setItem('subgen.style', JSON.stringify(S.style));
-    invalidateOverlayCache(['style', 'font', 'uppercase', 'box_fill', 'box_stroke'].includes(k));
+    invalidateOverlayCache(['style', 'font', 'uppercase', 'box_fill', 'box_stroke',
+      'pop_color', 'pop_scale', 'pop_duration', 'highlight_color', 'box_stroke',
+      'box_stroke_color', 'box_stroke_width', 'border_radius', 'pad_x', 'pad_y'].includes(k));
   });
   const CHUNK = [{ title: '', show: () => true, controls: [
     { k: 'max_words', label: 'Words per line', t: 'range', min: 1, max: 5, step: 1 },
