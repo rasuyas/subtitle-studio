@@ -15,6 +15,10 @@
     <span id="appVersion" class="text-xs text-mute"></span>
   </div>
   <div class="flex items-center gap-3">
+    <div id="updateArea" class="flex items-center gap-2 hidden">
+      <span id="updateStatus" class="update-status text-xs text-mute" role="status" aria-live="polite">Checking for updates...</span>
+      <button id="updateBtn" class="btn !py-1 !px-2 text-xs" type="button">Check for Updates</button>
+    </div>
     <div id="jobname" class="text-xs text-mute">No media loaded</div>
     <button id="openExportsBtn" class="btn !py-1 !px-2 text-xs hidden">Exports folder</button>
   </div>

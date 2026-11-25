@@ -899,6 +899,7 @@ async function loadModels() {
 function enableDesktopUI() {
   const d = desktopApi();
   if (!d) return;
+  initUpdaterUI(d);
   $('#openExportsBtn').classList.remove('hidden');
   $('#openExportsBtn').onclick = () => d.open_exports_folder();
   $('#modelBrowse').classList.remove('hidden');
@@ -906,6 +907,57 @@ function enableDesktopUI() {
     const dir = await d.pick_model_folder();
     if (dir) $('#modelOther').value = dir;
   };
+}
+
+function initUpdaterUI(d) {
+  const area = $('#updateArea');
+  const button = $('#updateBtn');
+  const statusText = $('#updateStatus');
+  area.classList.remove('hidden');
+  if (button.dataset.bound) return;
+  button.dataset.bound = 'true';
+  let restartPrompted = false;
+
+  async function refresh() {
+    try {
+      const status = await d.get_update_status();
+      statusText.textContent = status.message;
+      statusText.classList.toggle('is-error', status.state === 'error');
+      button.disabled = ['checking', 'downloading', 'applying', 'installing'].includes(status.state);
+      button.textContent = status.state === 'available' ? 'Install Update'
+        : status.state === 'staged' ? 'Restart to Finish' : 'Check for Updates';
+      if (status.state === 'staged' && !restartPrompted) {
+        restartPrompted = true;
+        if (window.confirm('The update is ready. Restart Subtitle Studio now?')) {
+          await d.restart_after_update();
+        }
+      }
+    } catch (error) {
+      statusText.textContent = `Update status unavailable: ${error.message}`;
+      statusText.classList.add('is-error');
+    }
+  }
+
+  button.onclick = async () => {
+    try {
+      const status = await d.get_update_status();
+      if (status.state === 'staged') {
+        if (window.confirm('Restart Subtitle Studio to finish the update?')) {
+          await d.restart_after_update();
+        }
+      } else if (status.state === 'available') {
+        await d.stage_update();
+      } else {
+        await d.check_for_updates();
+      }
+      await refresh();
+    } catch (error) {
+      statusText.textContent = `Update failed: ${error.message}`;
+      statusText.classList.add('is-error');
+    }
+  };
+  refresh();
+  window.setInterval(refresh, 1500);
 }
 window.addEventListener('pywebviewready', enableDesktopUI);
 

@@ -13,6 +13,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from app import updater
+
 ROOT = Path(__file__).resolve().parent.parent
 WORK = ROOT / "workspace"
 EXPORTS = ROOT / "exports"
@@ -93,9 +95,113 @@ class DesktopApi:
 
     def __init__(self):
         self._window = None
+        self._update_lock = threading.Lock()
+        self._update_status = {
+            "state": "checking",
+            "current_version": "",
+            "latest_version": "",
+            "update_available": False,
+            "message": "Checking for updates...",
+            "archive_url": None,
+        }
+        self._start_update_check()
 
     def attach(self, window):
         self._window = window
+
+    def get_update_status(self) -> dict:
+        with self._update_lock:
+            return dict(self._update_status)
+
+    def check_for_updates(self) -> dict:
+        with self._update_lock:
+            if self._update_status["state"] in ("checking", "downloading", "applying", "installing"):
+                return dict(self._update_status)
+        self._start_update_check()
+        return self.get_update_status()
+
+    def _start_update_check(self):
+        with self._update_lock:
+            self._update_status.update(
+                state="checking",
+                message="Checking for updates...",
+                update_available=False,
+                archive_url=None,
+            )
+        threading.Thread(target=self._check_update_worker, name="update-check", daemon=True).start()
+
+    def _check_update_worker(self):
+        try:
+            result = updater.check_for_updates(ROOT, timeout=4.0)
+            available = result["update_available"]
+            state = "available" if available else "current"
+            message = (
+                f"Version {result['latest_version']} is available."
+                if available
+                else f"You're up to date (v{result['current_version']})."
+            )
+            with self._update_lock:
+                self._update_status.update(
+                    result,
+                    state=state,
+                    message=message,
+                )
+        except Exception as exc:
+            logging.warning("Update check failed: %s", exc)
+            with self._update_lock:
+                self._update_status.update(state="error", message=str(exc), archive_url=None)
+
+    def stage_update(self) -> bool:
+        with self._update_lock:
+            if self._update_status["state"] != "available" or not self._update_status.get("archive_url"):
+                raise RuntimeError("There is no available update to install.")
+            archive_url = self._update_status["archive_url"]
+            self._update_status.update(state="downloading", message="Downloading update...")
+        threading.Thread(
+            target=self._stage_update_worker,
+            args=(archive_url,),
+            name="update-install",
+            daemon=True,
+        ).start()
+        return True
+
+    def _stage_update_worker(self, archive_url: str):
+        def set_message(message):
+            state = "applying" if message.startswith("Applying") else "downloading"
+            with self._update_lock:
+                self._update_status.update(state=state, message=message)
+
+        try:
+            requirements_changed = updater.download_and_apply(ROOT, archive_url, set_message)
+            if requirements_changed:
+                with self._update_lock:
+                    self._update_status.update(state="installing", message="Installing updated requirements...")
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "-r", str(ROOT / "requirements.txt")],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                if result.returncode:
+                    raise RuntimeError(
+                        f"Dependency installation failed:\n{result.stdout[-1200:]}"
+                    )
+            with self._update_lock:
+                self._update_status.update(
+                    state="staged",
+                    message="Update staged. Restart Subtitle Studio to finish.",
+                )
+        except Exception as exc:
+            logging.exception("Failed to stage update")
+            with self._update_lock:
+                self._update_status.update(state="error", message=f"Update failed: {exc}")
+
+    def restart_after_update(self) -> bool:
+        with self._update_lock:
+            if self._update_status["state"] != "staged":
+                raise RuntimeError("The update is not ready to restart.")
+        subprocess.Popen([sys.executable, "Subtitle Studio.pyw"], cwd=str(ROOT))
+        os._exit(0)
 
     def pick_media_file(self) -> str | None:
         import webview
@@ -184,6 +290,9 @@ def _wait_for_server(port: int, server_err: list[Exception], timeout: float = 15
 
 def main():
     _setup_logging()
+    for cleanup_error in updater.cleanup_old_files(ROOT):
+        logging.warning("Could not remove leftover update file: %s", cleanup_error)
+    updater.ensure_command_permissions(ROOT)
     if sys.platform == "win32":
         try:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SubtitleStudio.Desktop")
@@ -199,6 +308,7 @@ def main():
         )
         sys.exit(1)
 
+    api = DesktopApi()
     try:
         import uvicorn
         import webview
@@ -236,7 +346,6 @@ def main():
         _show_error("Subtitle Studio — Server Error", f"Failed to start local engine:\n{exc}")
         sys.exit(1)
 
-    api = DesktopApi()
     window = webview.create_window(
         "Subtitle Studio",
         url=f"http://127.0.0.1:{port}/",

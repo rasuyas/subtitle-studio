@@ -92,6 +92,8 @@ img { display: block; max-width: 100%; }
 .text-right { text-align: right; }
 .underline { text-decoration: underline; }
 .cursor-pointer { cursor: pointer; }
+.update-status { max-width: 280px; }
+.update-status.is-error { color: #ff8a8a; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;
