@@ -6,7 +6,7 @@ Drop in a video, an audio file or a YouTube link. The app transcribes it with wo
 
 Everything runs on your own computer. Nothing is uploaded anywhere.
 
-**[Click here to install](#install-and-run)**
+[![Click to install](https://img.shields.io/badge/Click%20to%20install-2ea44f?style=for-the-badge)](#install-and-run)
 
 > [!WARNING]
 > **Work in progress.** It already works well for short videos in the author's own use, but it is still buggy and not optimized. Expect rough edges, and see [Known issues](#known-issues).
