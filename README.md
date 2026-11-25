@@ -31,7 +31,7 @@ This project was **written with AI coding assistants** (mainly Claude by Anthrop
 - **Inputs:** local video (`.mp4`, `.mov`, `.mkv`, `.webm`), local audio (`.mp3`, `.wav`, `.m4a`, `.aac`, `.ogg`), or a **YouTube link** (video, or audio only).
 - **Word-level transcription** with faster-whisper on an NVIDIA GPU. Models: `small`, `medium`, `large-v3`, `large-v3-turbo` (default). Language: auto-detect, Indonesian or English.
 - **Bring your own model:** use any faster-whisper (CTranslate2) model, from a folder or a Hugging Face repo.
-- **Editable transcript:** fix misheard words, casing, slang and timing, then render again without transcribing again.
+- **Editable transcript:** fix misheard words, casing, slang and timing, then render again without transcribing again. Search and replace text across the transcript; word timestamps are preserved, or redistributed only within the replaced tokens when a replacement changes the word count. Optionally paste a reference script and apply wording corrections explicitly.
 - **Phrase chunking:** 1 to 5 words per line, max characters, automatic breaks on punctuation and pauses.
 - **Highlight styles:**
   - **Red rounded pill** (default): a rounded box follows the spoken word.

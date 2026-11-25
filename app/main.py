@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import subtitle_engine as se
+from .script_alignment import fix_words_from_script
 from . import video_renderer as vr
 from .transcriber import MODELS_DIR, list_custom_models
 
@@ -294,6 +295,15 @@ def frame(job_id: str, t: float = 0.0):
 def chunk(body: dict = Body(...)):
     c = body.get("chunk", {})
     return {"phrases": se.chunk_words(body["words"], c.get("max_words", 3), c.get("max_chars", 24), c.get("pause", 0.55))}
+
+
+@app.post("/api/fix-script")
+def fix_script(body: dict = Body(...)):
+    try:
+        words, fixed = fix_words_from_script(body.get("words") or [], body.get("reference", ""))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"words": words, "fixed": fixed}
 
 
 @app.post("/api/preview")

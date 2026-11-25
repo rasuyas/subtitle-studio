@@ -122,6 +122,35 @@
         <h2 class="!mb-0">Transcript</h2>
         <span id="gridInfo" class="text-xs text-mute">No transcript yet</span>
       </div>
+      <details class="reference-script mb-3">
+        <summary>Reference Script (optional)</summary>
+        <div class="mt-2">
+          <label class="text-xs text-mute" for="referenceScript">Paste the original script to correct misheard words and typos.</label>
+          <textarea id="referenceScript" class="field reference-text mt-1" rows="4" placeholder="Paste your original script here..."></textarea>
+          <div class="flex flex-wrap items-center gap-2 mt-2">
+            <button id="clearReferenceScript" class="btn !py-1 !px-2 text-xs" type="button">Clear</button>
+            <button id="fixScript" class="btn btn-primary !py-1 !px-2 text-xs" type="button" disabled>Fix miswording and typo</button>
+            <span id="scriptStatus" class="text-xs text-mute" role="status" aria-live="polite"></span>
+          </div>
+        </div>
+      </details>
+      <div class="transcript-search" role="search" aria-label="Transcript search and replace">
+        <label class="transcript-search-field">Find
+          <input id="transcriptFind" class="field" type="search" autocomplete="off" placeholder="Find text">
+        </label>
+        <label class="transcript-search-field">Replace
+          <input id="transcriptReplace" class="field" type="text" autocomplete="off" placeholder="Replace with">
+        </label>
+        <div class="transcript-search-actions">
+          <label class="transcript-search-case"><input id="transcriptCase" type="checkbox"> Case-sensitive</label>
+          <span id="transcriptMatchCount" class="text-xs text-mute tnum" aria-live="polite">0 / 0</span>
+          <button id="transcriptFindBtn" class="btn !py-1 !px-2 text-xs" type="button">Find</button>
+          <button id="transcriptPrev" class="btn !py-1 !px-2 text-xs" type="button" disabled>Prev</button>
+          <button id="transcriptNext" class="btn !py-1 !px-2 text-xs" type="button" disabled>Next</button>
+          <button id="transcriptReplaceBtn" class="btn !py-1 !px-2 text-xs" type="button" disabled>Replace</button>
+          <button id="transcriptReplaceAll" class="btn !py-1 !px-2 text-xs" type="button" disabled>Replace All</button>
+        </div>
+      </div>
       <div id="grid" class="transcript-grid flex flex-col gap-2 overflow-auto pr-1"></div>
     </div>
   </section>

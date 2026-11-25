@@ -889,6 +889,147 @@ async function rechunk() {
 const scheduleChunk = debounce(rechunk, 45);
 
 const tfmt = s => { const m = Math.floor(s / 60); return `${m}:${(s - m * 60).toFixed(2).padStart(5, '0')}`; };
+let transcriptMatches = [];
+let selectedTranscriptMatch = -1;
+let searchNavigationFocus = false;
+
+function findTranscriptMatches() {
+  const query = $('#transcriptFind').value;
+  if (!query || !S.words.length) return [];
+  const tokenRanges = [];
+  let text = '';
+  S.words.forEach((word, index) => {
+    if (index) text += ' ';
+    const start = text.length;
+    const tokenText = String(word.w ?? '');
+    text += tokenText;
+    tokenRanges.push({ index, start, end: text.length });
+  });
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const matcher = new RegExp(escaped, $('#transcriptCase').checked ? 'g' : 'gi');
+  const matches = [];
+  let rangeIndex = 0;
+  let match;
+  while ((match = matcher.exec(text))) {
+    const start = match.index;
+    const end = start + match[0].length;
+    while (rangeIndex < tokenRanges.length && tokenRanges[rangeIndex].end <= start) rangeIndex++;
+    const touched = [];
+    for (let i = rangeIndex; i < tokenRanges.length && tokenRanges[i].start < end; i++) {
+      if (tokenRanges[i].end > start) touched.push(tokenRanges[i]);
+    }
+    if (touched.length) {
+      const first = touched[0], last = touched[touched.length - 1];
+      matches.push({
+        start,
+        end,
+        firstIndex: first.index,
+        lastIndex: last.index,
+        firstOffset: Math.max(0, start - first.start),
+        lastOffset: Math.max(0, end - last.start),
+        wordMatches: touched.map(token => ({
+          index: token.index,
+          start: Math.max(start, token.start) - token.start,
+          end: Math.min(end, token.end) - token.start,
+        })).filter(token => token.end > token.start),
+      });
+    }
+  }
+  return matches;
+}
+
+function refreshTranscriptSearch(resetSelection = false, preferredIndex = selectedTranscriptMatch) {
+  transcriptMatches = findTranscriptMatches();
+  selectedTranscriptMatch = transcriptMatches.length
+    ? Math.max(0, Math.min(resetSelection ? 0 : preferredIndex, transcriptMatches.length - 1))
+    : -1;
+  const matchedWords = new Set();
+  const currentWords = new Set();
+  transcriptMatches.forEach((match, index) => {
+    match.wordMatches.forEach(token => matchedWords.add(token.index));
+    if (index === selectedTranscriptMatch) match.wordMatches.forEach(token => currentWords.add(token.index));
+  });
+  $$('.wc[data-word-index]').forEach(cell => {
+    const wordIndex = Number(cell.dataset.wordIndex);
+    cell.classList.toggle('search-hit', matchedWords.has(wordIndex));
+    cell.classList.toggle('search-current', currentWords.has(wordIndex));
+  });
+  $('#transcriptMatchCount').textContent = `${selectedTranscriptMatch < 0 ? 0 : selectedTranscriptMatch + 1} / ${transcriptMatches.length}`;
+  $('#transcriptPrev').disabled = transcriptMatches.length < 2;
+  $('#transcriptNext').disabled = transcriptMatches.length < 2;
+  $('#transcriptReplaceBtn').disabled = selectedTranscriptMatch < 0;
+  $('#transcriptReplaceAll').disabled = transcriptMatches.length === 0;
+}
+
+function navigateTranscriptMatch(step = 0) {
+  if (!transcriptMatches.length) return;
+  selectedTranscriptMatch = selectedTranscriptMatch < 0
+    ? 0
+    : (selectedTranscriptMatch + step + transcriptMatches.length) % transcriptMatches.length;
+  refreshTranscriptSearch(false, selectedTranscriptMatch);
+  if (!vid.paused || sampleTimer) return;
+  const match = transcriptMatches[selectedTranscriptMatch];
+  const firstWordMatch = match.wordMatches[0];
+  const cell = $(`.wc[data-word-index="${firstWordMatch.index}"]`);
+  if (cell) cell.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  const input = cell && $('input.w', cell);
+  if (input) {
+    searchNavigationFocus = true;
+    try {
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(firstWordMatch.start, firstWordMatch.end);
+    } finally {
+      searchNavigationFocus = false;
+    }
+  }
+}
+
+function replaceTranscriptMatch(match, replacement) {
+  const originals = S.words.slice(match.firstIndex, match.lastIndex + 1);
+  if (!originals.length) return;
+  const prefix = String(originals[0].w ?? '').slice(0, match.firstOffset);
+  const suffix = String(originals[originals.length - 1].w ?? '').slice(match.lastOffset);
+  const replacementText = `${prefix}${replacement}${suffix}`.trim();
+  const pieces = replacementText ? replacementText.split(/\s+/) : [];
+  const start = originals[0].start;
+  const end = originals[originals.length - 1].end;
+  let updated;
+  if (pieces.length === originals.length) {
+    updated = pieces.map((word, index) => ({ ...originals[index], w: word }));
+  } else if (pieces.length === 1 && originals.length === 1) {
+    updated = [{ ...originals[0], w: pieces[0] }];
+  } else {
+    // When token counts change, keep the replacement inside only the matched time interval.
+    const duration = end - start;
+    updated = pieces.map((word, index) => ({
+      ...originals[Math.min(index, originals.length - 1)],
+      w: word,
+      start: start + duration * index / pieces.length,
+      end: start + duration * (index + 1) / pieces.length,
+    }));
+  }
+  S.words.splice(match.firstIndex, originals.length, ...updated);
+}
+
+async function replaceSelectedTranscriptMatch() {
+  if (selectedTranscriptMatch < 0) return;
+  const index = selectedTranscriptMatch;
+  replaceTranscriptMatch(transcriptMatches[index], $('#transcriptReplace').value);
+  await rechunk();
+  refreshTranscriptSearch(false, index);
+  if (!S.job) refreshLivePreview();
+}
+
+async function replaceAllTranscriptMatches() {
+  const matches = [...transcriptMatches].sort((a, b) => b.start - a.start);
+  if (!matches.length) return;
+  const replacement = $('#transcriptReplace').value;
+  matches.forEach(match => replaceTranscriptMatch(match, replacement));
+  await rechunk();
+  refreshTranscriptSearch(true);
+  if (!S.job) refreshLivePreview();
+}
+
 function selectWord(pi, wi, seek = false) {
   S.selPhrase = pi; S.selWord = wi;
   $$('.prow').forEach((r, i) => r.classList.toggle('sel', i === pi));
@@ -903,6 +1044,7 @@ function selectWord(pi, wi, seek = false) {
 function renderGrid() {
   const g = $('#grid'); g.innerHTML = '';
   $('#gridInfo').textContent = S.words.length ? `${S.words.length} words · ${S.phrases.length} phrases. Edit text or timing, no need to transcribe again.` : 'No transcript yet';
+  updateScriptButton();
   S.phrases.forEach((p, pi) => {
     const row = document.createElement('div');
     row.className = 'prow' + (pi === S.selPhrase ? ' sel' : '');
@@ -912,19 +1054,25 @@ function renderGrid() {
     const cells = document.createElement('div'); cells.className = 'flex flex-wrap gap-2';
     p.words.forEach((w, wi) => {
       const c = document.createElement('div'); c.className = 'wc';
+      c.dataset.wordIndex = w.i;
       c.innerHTML = `<input class="w" aria-label="Word" value="${w.w.replace(/"/g, '&quot;')}" size="${Math.max(4, w.w.length)}">
         <div class="flex items-center"><input class="t" aria-label="Start seconds" type="number" step="0.01" value="${w.start}"><input class="t" aria-label="End seconds" type="number" step="0.01" value="${w.end}"><button class="text-mute hover:text-fg px-1" title="Delete word" aria-label="Delete word">×</button></div>`;
       const [tw, ts, te] = $$('input', c);
-      c.addEventListener('focusin', () => selectWord(pi, wi, vid.paused));
+      c.addEventListener('focusin', () => { if (!searchNavigationFocus) selectWord(pi, wi, vid.paused); });
       tw.oninput = () => {
         const txt = tw.value.trim();
         if (txt) {
           S.words[w.i].w = w.w = txt;
           tw.size = Math.max(4, txt.length);
           invalidateOverlayCache();
+          refreshTranscriptSearch();
         }
       };
-      tw.onchange = () => { S.words[w.i].w = w.w = tw.value.trim(); if (!w.w) delWord(w.i); else { tw.size = Math.max(4, w.w.length); invalidateOverlayCache(); } };
+      tw.onchange = () => {
+        S.words[w.i].w = w.w = tw.value.trim();
+        if (!w.w) delWord(w.i);
+        else { tw.size = Math.max(4, w.w.length); invalidateOverlayCache(); refreshTranscriptSearch(); }
+      };
       const timeChange = () => {
         const s0 = parseFloat(ts.value), s1 = parseFloat(te.value);
         if (Number.isFinite(s0)) S.words[w.i].start = w.start = s0;
@@ -939,8 +1087,53 @@ function renderGrid() {
     });
     row.append(head, cells); g.appendChild(row);
   });
+  refreshTranscriptSearch();
 }
 function delWord(i) { S.words.splice(i, 1); rechunk(); }
+
+$('#transcriptFind').addEventListener('input', () => refreshTranscriptSearch(true));
+$('#transcriptCase').addEventListener('change', () => refreshTranscriptSearch(true));
+$('#transcriptFind').addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); navigateTranscriptMatch(event.shiftKey ? -1 : 0); }
+});
+$('#transcriptFindBtn').onclick = () => navigateTranscriptMatch();
+$('#transcriptPrev').onclick = () => navigateTranscriptMatch(-1);
+$('#transcriptNext').onclick = () => navigateTranscriptMatch(1);
+$('#transcriptReplaceBtn').onclick = replaceSelectedTranscriptMatch;
+$('#transcriptReplaceAll').onclick = replaceAllTranscriptMatches;
+
+function updateScriptButton() {
+  $('#fixScript').disabled = !S.words.length || !$('#referenceScript').value.trim() || $('#fixScript').dataset.busy === 'true';
+}
+
+$('#referenceScript').addEventListener('input', updateScriptButton);
+$('#clearReferenceScript').onclick = () => {
+  $('#referenceScript').value = '';
+  $('#scriptStatus').textContent = '';
+  updateScriptButton();
+};
+$('#fixScript').onclick = async () => {
+  const button = $('#fixScript');
+  const status = $('#scriptStatus');
+  button.dataset.busy = 'true';
+  updateScriptButton();
+  status.textContent = 'Aligning script...';
+  try {
+    const result = await (await api('/api/fix-script', {
+      words: S.words,
+      reference: $('#referenceScript').value,
+    })).json();
+    S.words = result.words;
+    await rechunk();
+    status.textContent = `Fixed ${result.fixed} words from script`;
+  } catch (e) {
+    status.textContent = e.message;
+    setStatus('render', 0, e.message, 'error');
+  } finally {
+    button.dataset.busy = 'false';
+    updateScriptButton();
+  }
+};
 
 /* ------------------------------------------------------------------ export */
 function setMode(m) {
