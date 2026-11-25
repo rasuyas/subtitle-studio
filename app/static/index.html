@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subtitle Studio</title>
+<link rel="icon" type="image/png" href="/static/icon.png">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="bg-ink text-fg min-h-screen">
+<header class="flex items-center justify-between px-5 py-3 border-b border-line">
+  <div class="flex items-center gap-3">
+    <img src="/static/icon.png" alt="" style="width:22px;height:22px;border-radius:5px">
+    <h1 class="text-[15px] font-semibold">Subtitle Studio</h1>
+  </div>
+  <div class="flex items-center gap-3">
+    <div id="jobname" class="text-xs text-mute">No media loaded</div>
+    <button id="openExportsBtn" class="btn !py-1 !px-2 text-xs hidden">Exports folder</button>
+  </div>
+</header>
+
+<main class="grid gap-4 p-4 lg:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)_350px]">
+  <!-- LEFT -->
+  <section class="flex flex-col gap-4">
+    <div class="panel">
+      <h2>Source</h2>
+      <div class="seg grid-cols-2 mb-3" id="srcTabs">
+        <button aria-pressed="true" data-tab="file">Local file</button>
+        <button aria-pressed="false" data-tab="yt">YouTube link</button>
+      </div>
+      <div id="tab-file">
+        <label id="drop" class="block border border-dashed border-line rounded-lg p-5 text-center text-xs text-mute cursor-pointer hover:border-mute">
+          Drop a video or audio file here, or click to choose
+          <span class="block mt-1">mp4, mov, mkv, webm, mp3, wav, m4a, aac, ogg</span>
+          <input id="file" type="file" class="sr-only" accept=".mp4,.mov,.mkv,.webm,.mp3,.wav,.m4a,.aac,.ogg">
+        </label>
+      </div>
+      <div id="tab-yt" class="hidden">
+        <input id="ytUrl" class="field" placeholder="https://youtube.com/watch?v=…">
+        <div id="ytInfo" class="hidden mt-3 flex gap-3 items-center text-xs">
+          <img id="ytThumb" class="w-24 rounded" alt="">
+          <div><div id="ytTitle" class="font-medium"></div><div id="ytMeta" class="text-mute"></div></div>
+        </div>
+        <label class="flex items-center gap-2 text-xs text-mute mt-3"><input type="checkbox" id="ytAudio"> Audio only</label>
+        <div class="flex gap-2 mt-3">
+          <button class="btn flex-1" id="ytFetch">Look up</button>
+          <button class="btn btn-primary flex-1" id="ytGo">Download</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Transcription</h2>
+      <div class="row" style="grid-template-columns:80px 1fr"><span>Model</span>
+        <select id="model" class="field"><option>small</option><option>medium</option><option>large-v3</option><option selected>large-v3-turbo</option></select></div>
+      <div id="modelOtherRow" class="hidden flex gap-2 mb-2">
+        <input id="modelOther" class="field flex-1" placeholder="Folder path or Hugging Face repo id" aria-label="Custom model folder or repo">
+        <button id="modelBrowse" class="btn !py-1 !px-2 text-xs hidden" type="button">Browse</button>
+      </div>
+      <p id="modelHint" class="hidden text-xs text-mute mb-2">Needs a CTranslate2 (faster-whisper) model. Folders placed in the models folder appear in the list after a page reload.</p>
+      <div class="row" style="grid-template-columns:80px 1fr"><span>Language</span>
+        <select id="lang" class="field"><option value="auto">Auto-detect</option><option value="id">Indonesian</option><option value="en">English</option></select></div>
+      <button id="go" class="btn btn-primary w-full mt-2" disabled>Transcribe</button>
+    </div>
+
+    <div class="panel" id="statusPanel">
+      <h2 id="stLabel">Status</h2>
+      <div class="bar"><i id="stBar"></i></div>
+      <p id="stMsg" class="text-xs text-mute mt-2 break-words">Load a file or link to begin.</p>
+    </div>
+  </section>
+
+  <!-- CENTER -->
+  <section class="flex flex-col gap-4 min-w-0">
+    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div class="panel" id="cropPanel">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="!mb-0">Crop boxes</h2>
+          <span class="text-xs text-mute"><b class="text-face">Facecam</b> and <b class="text-main">main</b> boxes keep the aspect of their output area</span>
+        </div>
+        <div id="frameWrap" class="relative w-full bg-black rounded overflow-hidden select-none" style="min-height:180px">
+          <video id="srcVideo" class="block w-full" playsinline preload="auto"></video>
+          <div class="box main" id="boxMain"><span class="tag">Main</span><i class="h" data-c="nw"></i><i class="h" data-c="ne"></i><i class="h" data-c="sw"></i><i class="h" data-c="se"></i></div>
+          <div class="box face" id="boxFace"><span class="tag">Facecam</span><i class="h" data-c="nw"></i><i class="h" data-c="ne"></i><i class="h" data-c="sw"></i><i class="h" data-c="se"></i></div>
+        </div>
+        <p id="audioNote" class="hidden text-xs text-mute mb-2">Audio-only source: layouts are off and the canvas is a transparent 1080×1920 overlay.</p>
+        <div id="transport" class="flex items-center gap-2 mt-3 text-xs text-mute">
+          <button id="playPause" class="btn !py-1 !px-2 text-xs" type="button" disabled title="Play / Pause (Space)">Play</button>
+          <button id="skipBack" class="btn !py-1 !px-2 text-xs" type="button" disabled title="Back 2s">-2s</button>
+          <button id="skipFwd" class="btn !py-1 !px-2 text-xs" type="button" disabled title="Forward 2s">+2s</button>
+          <input type="range" id="scrub" class="flex-1" min="0" max="1" step="any" value="0" disabled aria-label="Playback position">
+          <span id="scrubVal" class="text-right text-fg tnum" style="min-width:92px">0:00.0 / 0:00.0</span>
+          <button id="muteBtn" class="btn !py-1 !px-2 text-xs" type="button" disabled title="Mute / Unmute">🔊</button>
+          <input type="range" id="vol" min="0" max="1" step="0.05" value="1" style="width:58px" disabled aria-label="Volume">
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="!mb-0">Output preview</h2>
+          <div class="flex gap-1.5">
+            <button class="btn !py-1 !px-2 text-xs" id="bgToggle" type="button">Checkerboard</button>
+            <button class="btn !py-1 !px-2 text-xs" id="playBtn" type="button">Play</button>
+          </div>
+        </div>
+        <div id="stage" class="relative mx-auto checker rounded overflow-hidden" style="width:270px;aspect-ratio:9/16">
+          <canvas id="layCanvas" width="540" height="960" class="absolute inset-0 w-full h-full hidden"></canvas>
+          <img id="ovl" class="absolute inset-0 w-full h-full" alt="" style="pointer-events:none">
+        </div>
+        <p id="previewInfo" class="text-xs text-mute text-center mt-2">1080 × 1920 · live preview</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="!mb-0">Transcript</h2>
+        <span id="gridInfo" class="text-xs text-mute">No transcript yet</span>
+      </div>
+      <div id="grid" class="flex flex-col gap-2 max-h-[420px] overflow-auto pr-1"></div>
+    </div>
+  </section>
+
+  <!-- RIGHT -->
+  <section class="flex flex-col gap-4 lg:col-span-2 2xl:col-span-1 2xl:row-auto">
+    <div class="panel">
+      <h2>Layout</h2>
+      <div class="seg grid-cols-2" id="layouts">
+        <button data-l="split50" aria-pressed="true">Split 50/50</button>
+        <button data-l="split35" aria-pressed="false">Split 35/65</button>
+        <button data-l="pip" aria-pressed="false">Picture-in-picture</button>
+        <button data-l="single" aria-pressed="false">Single frame</button>
+      </div>
+      <div id="pipOpts" class="hidden mt-3">
+        <div class="text-xs text-mute mb-1.5">Facecam corner</div>
+        <div class="seg grid-cols-4" id="corners">
+          <button data-c="tl" aria-pressed="false">Top left</button><button data-c="tr" aria-pressed="false">Top right</button>
+          <button data-c="bl" aria-pressed="false">Bottom left</button><button data-c="br" aria-pressed="true">Bottom right</button>
+        </div>
+      </div>
+      <label id="blurOpt" class="hidden items-center gap-2 text-xs text-mute mt-3"><input type="checkbox" id="blur"> Blurred background with centered video</label>
+    </div>
+
+    <div class="panel">
+      <h2>Subtitle style</h2>
+      <div id="styleControls"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Phrases</h2>
+      <div id="chunkControls"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Export</h2>
+      <div class="seg grid-cols-1" id="modes">
+        <button data-m="mp4" aria-pressed="true">Video with subtitles (.mp4)</button>
+        <button data-m="mov" aria-pressed="false">Transparent subtitles only (.mov, ProRes 4444)</button>
+        <button data-m="webm" aria-pressed="false">Transparent subtitles only (.webm, smaller)</button>
+      </div>
+      <button id="render" class="btn btn-primary w-full mt-3" disabled>Render</button>
+      <div id="result" class="hidden mt-3 text-xs"></div>
+    </div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

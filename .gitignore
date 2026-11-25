@@ -1,0 +1,79 @@
+# NOTE: in .gitignore a "#" only starts a comment at the beginning of a line.
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------- Virtual environments ----------
+venv/
+.venv/
+env/
+
+# ---------- Secrets and personal config ----------
+.env
+.env.*
+*.pem
+*.key
+cookies.txt
+*cookies*.txt
+
+# ---------- App runtime folders (created automatically on first run) ----------
+# temp downloads, uploads and rendered subtitle frames
+workspace/
+# your finished videos and overlays
+exports/
+# Whisper models are huge (hundreds of MB to several GB)
+models/
+# downloaded on first run; keeps font licenses out of the repo
+fonts/
+
+# ---------- Media files (never commit footage or renders) ----------
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.mp3
+*.wav
+*.m4a
+*.aac
+*.ogg
+*.flac
+*.srt
+*.ass
+
+# ---------- Model files ----------
+*.bin
+*.pt
+*.pth
+*.safetensors
+*.onnx
+*.gguf
+
+# ---------- Archives ----------
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+
+# ---------- Editor and OS junk ----------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Logs and temp ----------
+*.log
+*.tmp
+tmp/
+
+# ---------- Exceptions: demo media for the README can live in docs/ ----------
+!docs/
+!docs/**
