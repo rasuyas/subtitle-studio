@@ -124,11 +124,11 @@ def build_timeline(phrases: list[dict], total: float, fps: float = 30.0, hold: f
 
 
 # --------------------------------------------------------------------------- rendering
-def _layout(texts, font, st):
+def _layout(texts, font, st, canvas_w: int = W):
     """Greedy line wrap. Returns list of lines; each line = list of (word_idx, x, width)."""
     space = font.getlength(" ")
     gap = space + (st["pad_x"] if st["style"] == "pill" else 0)
-    max_w = W * 0.9
+    max_w = canvas_w * 0.9
     lines, line, x = [], [], 0.0
     for i, t in enumerate(texts):
         wd = font.getlength(t)
@@ -144,33 +144,39 @@ def _layout(texts, font, st):
     return lines
 
 
-def render_state(words: list[dict], active: int | None, style: dict | None = None) -> Image.Image:
-    """Render one transparent 1080x1920 RGBA frame: all words of a phrase with `active` highlighted."""
+def render_state(words: list[dict], active: int | None, style: dict | None = None,
+                 scale: float = 1.0) -> Image.Image:
+    """Render one transparent RGBA frame with all words of a phrase and `active` highlighted."""
     st = {**DEFAULT_STYLE, **(style or {})}
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    canvas_w, canvas_h = int(round(W * scale)), int(round(H * scale))
+    img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
     if not words:
         return img
 
-    size = int(st["font_size"])
+    for metric in ("font_size", "stroke_width", "shadow_dx", "shadow_dy", "shadow_blur",
+                   "box_stroke_width", "border_radius", "pad_x", "pad_y"):
+        st[metric] *= scale
+
+    size = max(1, int(round(st["font_size"])))
     font = get_font(st["font"], size)
     texts = [w["w"].upper() if st["uppercase"] else w["w"] for w in words]
     visible = len(words) if st["style"] != "popin" else (active + 1 if active is not None else 0)
     if visible == 0:
         return img
 
-    lines = _layout(texts, font, st)
+    lines = _layout(texts, font, st, canvas_w)
     ascent, descent = font.getmetrics()
     line_h = int((ascent + descent) * 1.08)
     block_h = line_h * len(lines)
     sw = int(st["stroke_width"])
-    margin = int(sw + st["shadow_blur"] * 3 + max(abs(st["shadow_dx"]), abs(st["shadow_dy"])) + st["pad_y"] + size * 0.3 + 24)
+    margin = int(sw + st["shadow_blur"] * 3 + max(abs(st["shadow_dx"]), abs(st["shadow_dy"])) + st["pad_y"] + size * 0.3 + 24 * scale)
 
-    top = int(H * st["y_pos"] - block_h / 2)
-    oy = max(0, min(H - (block_h + 2 * margin), top - margin))
-    lh = min(H, block_h + 2 * margin)
-    box_layer = Image.new("RGBA", (W, lh), (0, 0, 0, 0))
-    text_layer = Image.new("RGBA", (W, lh), (0, 0, 0, 0))
-    shadow_mask = Image.new("L", (W, lh), 0)
+    top = int(canvas_h * st["y_pos"] - block_h / 2)
+    oy = max(0, min(canvas_h - (block_h + 2 * margin), top - margin))
+    lh = min(canvas_h, block_h + 2 * margin)
+    box_layer = Image.new("RGBA", (canvas_w, lh), (0, 0, 0, 0))
+    text_layer = Image.new("RGBA", (canvas_w, lh), (0, 0, 0, 0))
+    shadow_mask = Image.new("L", (canvas_w, lh), 0)
     td, sd = ImageDraw.Draw(text_layer), ImageDraw.Draw(shadow_mask)
 
     cap_h = -font.getbbox("H", anchor="ls")[1]
@@ -178,7 +184,7 @@ def render_state(words: list[dict], active: int | None, style: dict | None = Non
     is_pop = st["style"] == "pop"
 
     for li, (line, line_w) in enumerate(lines):
-        x0 = (W - line_w) / 2
+        x0 = (canvas_w - line_w) / 2
         baseline = top + li * line_h + ascent - oy
         for idx, rel_x, wd in line:
             if idx >= visible:
@@ -195,7 +201,8 @@ def render_state(words: list[dict], active: int | None, style: dict | None = Non
             if is_active and is_pill:
                 px, py = st["pad_x"], st["pad_y"]
                 bottom = baseline + py + (0 if st["uppercase"] else size * 0.2)
-                _pill(box_layer, (x - px, baseline - cap_h - py, x + wd + px, bottom), st)
+                _pill(box_layer, (x - px, baseline - cap_h - py, x + wd + px, bottom), st,
+                      ss=2 if scale < 1 else 4)
             swd = max(1, round(sw * (f.size / size)))
             td.text((bx, by), texts[idx], font=f, fill=fill, anchor="ls",
                     stroke_width=swd, stroke_fill=_rgb(st["stroke_color"]))
@@ -204,10 +211,10 @@ def render_state(words: list[dict], active: int | None, style: dict | None = Non
 
     if st["shadow_blur"] > 0:
         shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(st["shadow_blur"]))
-    shadow = Image.new("RGBA", (W, lh), (0, 0, 0, 0))
+    shadow = Image.new("RGBA", (canvas_w, lh), (0, 0, 0, 0))
     shadow.putalpha(shadow_mask.point(lambda v: int(v * st["shadow_opacity"])))
 
-    out = Image.new("RGBA", (W, lh), (0, 0, 0, 0))
+    out = Image.new("RGBA", (canvas_w, lh), (0, 0, 0, 0))
     for layer in (shadow, box_layer, text_layer):
         out = Image.alpha_composite(out, layer)
     img.alpha_composite(out, (0, oy))
