@@ -82,7 +82,7 @@ cd subtitle-studio
 
 #### Download without Git
 
-Open the [latest Subtitle Studio release](https://github.com/rasuyas/subtitle-studio/releases/latest), then click **Source code (zip)** under **Assets**. Extract the downloaded ZIP and open the extracted folder. You do not need to install Git.
+Open the [![Latest Build](https://img.shields.io/badge/Latest%20Build-2ea44f?style=for-the-badge)](https://github.com/rasuyas/subtitle-studio/releases/latest), then click **Source code (zip)** under **Assets**. Extract the downloaded ZIP and open the extracted folder. You do not need to install Git.
 
 You can run Subtitle Studio as a **Desktop app** on Windows or in a **web browser** on Windows or Linux. On first run, the launchers automatically create a virtual environment and install the requirements. The first transcription also downloads the Whisper model, so it takes longer.
 
