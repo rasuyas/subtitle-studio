@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import functools
+import os
 from pathlib import Path
+import sys
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -31,25 +33,61 @@ DEFAULT_STYLE = {
 
 
 # --------------------------------------------------------------------------- fonts
+def _system_font_dirs() -> list[Path]:
+    if sys.platform == "win32":
+        dirs = [Path(r"C:\Windows\Fonts")]
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            dirs.append(Path(local_app_data) / "Microsoft" / "Windows" / "Fonts")
+        return dirs
+    if sys.platform.startswith("linux"):
+        return [Path("/usr/share/fonts"), Path("/usr/local/share/fonts"),
+                Path.home() / ".local" / "share" / "fonts"]
+    return []
+
+
+def _font_files(directory: Path) -> list[Path]:
+    if not directory.is_dir():
+        return []
+    return sorted(
+        (p for p in directory.rglob("*") if p.is_file() and p.suffix.lower() in (".ttf", ".otf")),
+        key=lambda p: (p.stem.casefold(), p.suffix.lower() != ".ttf", str(p).casefold()),
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def _font_catalog() -> tuple[dict[str, Path], set[str]]:
+    paths: dict[str, Path] = {}
+    custom_names = set()
+    for path in _font_files(FONT_DIR):
+        paths.setdefault(path.stem, path)
+        custom_names.add(path.stem)
+    for directory in _system_font_dirs():
+        for path in _font_files(directory):
+            paths.setdefault(path.stem, path)
+    return paths, custom_names
+
+
 def list_fonts() -> list[str]:
-    names = {p.stem for p in FONT_DIR.glob("*") if p.suffix.lower() in (".ttf", ".otf")}
-    ordered = [n for n in PREFERRED if n in names]
-    return ordered + sorted(names - set(ordered))
+    paths, custom_names = _font_catalog()
+    preferred = [name for name in PREFERRED if name in paths]
+    custom = sorted(custom_names - set(preferred))
+    system = sorted(paths.keys() - custom_names - set(preferred))
+    return preferred + custom + system
 
 
 @functools.lru_cache(maxsize=64)
 def get_font(name: str, size: int) -> ImageFont.FreeTypeFont:
-    for ext in (".ttf", ".otf"):
-        p = FONT_DIR / f"{name}{ext}"
-        if p.exists():
-            f = ImageFont.truetype(str(p), size)
-            try:  # variable fonts: pick the ExtraBold instance
-                names = [n.decode() if isinstance(n, bytes) else n for n in f.get_variation_names()]
-                if "ExtraBold" in names:
-                    f.set_variation_by_name("ExtraBold")
-            except Exception:
-                pass
-            return f
+    path = _font_catalog()[0].get(name)
+    if path:
+        f = ImageFont.truetype(str(path), size)
+        try:  # variable fonts: pick the ExtraBold instance
+            names = [n.decode() if isinstance(n, bytes) else n for n in f.get_variation_names()]
+            if "ExtraBold" in names:
+                f.set_variation_by_name("ExtraBold")
+        except Exception:
+            pass
+        return f
     fonts = list_fonts()
     if fonts:
         return get_font(fonts[0], size)
