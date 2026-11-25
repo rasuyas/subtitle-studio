@@ -76,9 +76,13 @@ Layouts are presets plus manual crop boxes. Automatic face detection is not impl
 ## Install and run
 
 ```bash
-git clone https://github.com/<your-username>/sub-generator.git
-cd sub-generator
+git clone https://github.com/rasuyas/subtitle-studio.git
+cd subtitle-studio
 ```
+
+#### Download without Git
+
+Open the [latest Subtitle Studio release](https://github.com/rasuyas/subtitle-studio/releases/latest), then click **Source code (zip)** under **Assets**. Extract the downloaded ZIP and open the extracted folder. You do not need to install Git.
 
 You can run Subtitle Studio as a **Desktop app** on Windows or in a **web browser** on Windows or Linux. On first run, the launchers automatically create a virtual environment and install the requirements. The first transcription also downloads the Whisper model, so it takes longer.
 
