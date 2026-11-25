@@ -1,5 +1,6 @@
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from app import video_renderer
 
@@ -47,3 +48,40 @@ class VideoRendererTests(unittest.TestCase):
         })
         self.assertIn("crop=1080:1920", graph)
         self.assertIn("scale=1080:1920", graph)
+
+    def test_mp4_export_limits_decoder_and_x264_threads(self):
+        def fail_nvenc(args, duration, on_progress=None):
+            if "h264_nvenc" in args:
+                raise RuntimeError("NVENC unavailable")
+            self.captured["args"] = args
+
+        video_renderer.run_ffmpeg = fail_nvenc
+        self.export_graph({"reframe": False})
+        args = self.captured["args"]
+        self.assertEqual(args[:10], [
+            "-threads", "1", "-i", "source.mp4", "-threads", "1", "-f",
+            "concat", "-safe", "0",
+        ])
+        self.assertEqual(args[args.index("-c:v"):args.index("-c:v") + 4],
+                         ["-c:v", "libx264", "-threads", "2"])
+
+    def test_ffmpeg_limits_filter_complex_threads(self):
+        process = type("Process", (), {"stdout": [], "returncode": 0, "wait": lambda self: None})()
+        with patch.object(video_renderer.subprocess, "Popen", return_value=process) as popen:
+            self.original_run_ffmpeg([], 1)
+        command = popen.call_args.args[0]
+        self.assertEqual(command[command.index("-filter_threads") + 1], "1")
+        self.assertEqual(command[command.index("-filter_complex_threads") + 1], "1")
+
+    def test_mov_export_limits_decoder_and_prores_threads(self):
+        with patch.object(video_renderer, "verify_alpha", return_value={"alpha_ok": True}):
+            video_renderer.export_mov_alpha(
+                Path("subtitles.txt"),
+                Path("output.mov"),
+                {"fps_str": "30", "duration": 2.0},
+            )
+        args = self.captured["args"]
+        self.assertEqual(args[:2], ["-threads", "1"])
+        encoder_index = args.index("-c:v")
+        self.assertEqual(args[encoder_index:encoder_index + 4],
+                         ["-c:v", "prores_ks", "-threads", "1"])

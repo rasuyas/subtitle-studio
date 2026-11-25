@@ -87,7 +87,8 @@ def build_layout(layout: str, sw: int, sh: int, main: dict, face: dict, pip_corn
 
 # --------------------------------------------------------------------------- ffmpeg runner
 def run_ffmpeg(args: list[str], duration: float, on_progress: Callable[[float, str], None] | None = None):
-    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1", "-nostats"] + args
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-filter_threads", "1",
+           "-filter_complex_threads", "1", "-progress", "pipe:1", "-nostats"] + args
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **_SUBPROC_KW)
     tail: deque[str] = deque(maxlen=25)
     for line in p.stdout:
@@ -129,9 +130,10 @@ def verify_alpha(path: Path) -> dict:
 # --------------------------------------------------------------------------- exports
 def export_mov_alpha(list_path: Path, out: Path, meta: dict, on_progress=None) -> dict:
     fps, dur = meta["fps_str"], meta["duration"]
-    run_ffmpeg(["-f", "concat", "-safe", "0", "-i", str(list_path),
+    run_ffmpeg(["-threads", "1", "-f", "concat", "-safe", "0", "-i", str(list_path),
                 "-vf", f"fps={fps},format=yuva444p10le", "-t", f"{dur:.3f}",
-                "-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", "-alpha_bits", "16",
+                "-c:v", "prores_ks", "-threads", "1", "-profile:v", "4444",
+                "-pix_fmt", "yuva444p10le", "-alpha_bits", "16",
                 "-vendor", "apl0", str(out)], dur, on_progress)
     return verify_alpha(out)
 
@@ -158,7 +160,8 @@ def export_mp4(src: Path, list_path: Path, out: Path, meta: dict, layout_args: d
                            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba")
     fc = (f"{layout};[1:v]{subtitle_filter}[sub];"
           f"[base][sub]overlay=0:0:format=auto:eof_action=pass,format=yuv420p[v]")
-    common = ["-i", str(src), "-f", "concat", "-safe", "0", "-i", str(list_path), "-filter_complex", fc,
+    common = ["-threads", "1", "-i", str(src), "-threads", "1", "-f", "concat", "-safe", "0",
+              "-i", str(list_path), "-filter_complex", fc,
               "-map", "[v]", "-map", "0:a?", "-c:a", "aac", "-b:a", "192k", "-t", f"{dur:.3f}", "-movflags", "+faststart"]
     if sys.platform == "darwin":
         preferred_encoder = "h264_videotoolbox"
@@ -167,7 +170,7 @@ def export_mp4(src: Path, list_path: Path, out: Path, meta: dict, layout_args: d
         preferred_encoder = "h264_nvenc"
         preferred_args = ["-c:v", preferred_encoder, "-preset", "p4", "-rc", "vbr", "-cq", "20",
                           "-b:v", "0", "-pix_fmt", "yuv420p"]
-    x264 = ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p"]
+    x264 = ["-c:v", "libx264", "-threads", "2", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p"]
     encoder = preferred_encoder
     try:
         run_ffmpeg(common + preferred_args + [str(out)], dur, on_progress)

@@ -150,6 +150,7 @@ ct2-transformers-converter --model your/finetune --output_dir models/my-model --
 | `ffmpeg` or `ffprobe` not found | Install FFmpeg and add it to your PATH, then restart the launcher. |
 | CUDA or cuDNN errors when transcribing | Check that your NVIDIA driver supports CUDA 12. The app falls back to CPU if CUDA cannot load. |
 | NVENC not available | The MP4 export automatically retries with the slower CPU encoder (`libx264`). |
+| FFmpeg reports memory allocation errors during export | Rendering limits FFmpeg's worker threads to reduce memory use. If it still fails, close memory-intensive apps and try a smaller source video. |
 | Fonts missing | Check your internet connection and restart, or put `.ttf` files into `fonts/` yourself. |
 
 When you report a bug, please paste the **full error text** from the terminal and the steps that caused it.
