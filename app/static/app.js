@@ -985,37 +985,17 @@ function navigateTranscriptMatch(step = 0) {
   }
 }
 
-function replaceTranscriptMatch(match, replacement) {
-  const originals = S.words.slice(match.firstIndex, match.lastIndex + 1);
-  if (!originals.length) return;
-  const prefix = String(originals[0].w ?? '').slice(0, match.firstOffset);
-  const suffix = String(originals[originals.length - 1].w ?? '').slice(match.lastOffset);
-  const replacementText = `${prefix}${replacement}${suffix}`.trim();
-  const pieces = replacementText ? replacementText.split(/\s+/) : [];
-  const start = originals[0].start;
-  const end = originals[originals.length - 1].end;
-  let updated;
-  if (pieces.length === originals.length) {
-    updated = pieces.map((word, index) => ({ ...originals[index], w: word }));
-  } else if (pieces.length === 1 && originals.length === 1) {
-    updated = [{ ...originals[0], w: pieces[0] }];
-  } else {
-    // When token counts change, keep the replacement inside only the matched time interval.
-    const duration = end - start;
-    updated = pieces.map((word, index) => ({
-      ...originals[Math.min(index, originals.length - 1)],
-      w: word,
-      start: start + duration * index / pieces.length,
-      end: start + duration * (index + 1) / pieces.length,
-    }));
-  }
-  S.words.splice(match.firstIndex, originals.length, ...updated);
+async function applyTranscriptMatches(matches, replacement) {
+  const payload = await (await api('/api/transcript/replace', {
+    words: S.words, matches, replacement,
+  })).json();
+  S.words = payload.words;
 }
 
 async function replaceSelectedTranscriptMatch() {
   if (selectedTranscriptMatch < 0) return;
   const index = selectedTranscriptMatch;
-  replaceTranscriptMatch(transcriptMatches[index], $('#transcriptReplace').value);
+  await applyTranscriptMatches([transcriptMatches[index]], $('#transcriptReplace').value);
   await rechunk();
   refreshTranscriptSearch(false, index);
   if (!S.job) refreshLivePreview();
@@ -1025,7 +1005,7 @@ async function replaceAllTranscriptMatches() {
   const matches = [...transcriptMatches].sort((a, b) => b.start - a.start);
   if (!matches.length) return;
   const replacement = $('#transcriptReplace').value;
-  matches.forEach(match => replaceTranscriptMatch(match, replacement));
+  await applyTranscriptMatches(matches, replacement);
   await rechunk();
   refreshTranscriptSearch(true);
   if (!S.job) refreshLivePreview();

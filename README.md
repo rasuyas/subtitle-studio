@@ -159,21 +159,15 @@ When you report a bug, please paste the **full error text** from the terminal an
 
 ## Known issues
 
-- Still buggy and not optimized. Short videos work best; very long videos have not been tested properly.
-- Jobs are kept in memory and are lost when the server restarts. The `workspace/` folder is not cleaned automatically.
-- The word-by-word pop-in style has no scale-in animation.
-- The layout preview can be slow on CPU or with large source files.
-- No automated tests yet.
-- No audio playback in the transcript editor, so timing has to be checked by rendering.
+See [SPEC.md](SPEC.md#known-issues) for the current known issues and implementation status.
 
 ## Ideas and roadmap
 
-- Playback with the live subtitle overlay for timing checks
 - Pop-in animation and word fades
 - SRT and ASS export
 - Save and load a project (words, style, crops)
 - Automatic face detection for layouts
-- Job cleanup, tests and code review
+- Broader integration tests and code review
 
 ---
 

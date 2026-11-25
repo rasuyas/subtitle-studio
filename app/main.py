@@ -5,6 +5,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import io
 import json
+import logging
 import mimetypes
 import re
 import shutil
@@ -22,8 +23,10 @@ from fastapi.staticfiles import StaticFiles
 
 from . import subtitle_engine as se
 from .script_alignment import fix_words_from_script
+from .transcript_editing import replace_transcript_matches
 from . import video_renderer as vr
 from .transcriber import MODELS_DIR, list_custom_models
+from .workspace_cleanup import cleanup_workspace
 
 _SUBPROC_KW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
@@ -55,8 +58,14 @@ def ensure_fonts():
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    cleanup_workspace(WORK)
     threading.Thread(target=ensure_fonts, daemon=True).start()
-    yield
+    try:
+        yield
+    finally:
+        removed = cleanup_workspace(WORK, active_job_ids=JOBS)
+        if removed:
+            logging.info("Removed %d stale workspace job directories.", len(removed))
 
 
 app = FastAPI(title="Subtitle Studio", lifespan=_lifespan)
@@ -304,6 +313,19 @@ def fix_script(body: dict = Body(...)):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"words": words, "fixed": fixed}
+
+
+@app.post("/api/transcript/replace")
+def replace_transcript(body: dict = Body(...)):
+    try:
+        words = replace_transcript_matches(
+            body.get("words") or [],
+            body.get("matches") or [],
+            body.get("replacement", ""),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"words": words}
 
 
 @app.post("/api/preview")

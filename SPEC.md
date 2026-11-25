@@ -36,3 +36,12 @@ layout.
 The desktop app checks for updates in a background thread at startup. Use **Check for Updates** in the header to check manually; available updates can be downloaded and installed from the GitHub release ZIP, with the `main` branch `VERSION` as a fallback when the Releases API is unavailable. The updater uses only Python's standard library and targets the repository configured by `OWNER` and `REPO` in `app/updater.py` (`rasuyas/subtitle-studio`).
 
 The updater preserves local fonts, settings, models, virtual environments, exports, and workspace data. It installs changed Python requirements before asking to restart the app.
+
+## Known issues
+
+- The app is still being optimized; short videos are best tested.
+- Jobs are kept in memory and are lost when the server restarts. Stale per-job folders in `workspace/` are cleaned at startup and shutdown after 24 hours; active jobs and exports are preserved.
+- The word-by-word pop-in style has no scale-in animation.
+- Live subtitle preview rendering is debounced and cached, but layout previews can still be slow on CPU or with large source files. A downscaled proxy is generated on demand for playback when the source codec is unsupported; downscaling layout-preview sources remains pending.
+- Audio/video playback with synchronized word highlighting is available in the transcript editor.
+- Automated tests cover updater/version checks, transcript editing and script alignment, subtitle rendering, and desktop geometry; broader integration coverage remains limited.
