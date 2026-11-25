@@ -80,9 +80,10 @@
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
       <div class="panel" id="cropPanel">
         <div class="flex items-center justify-between mb-2">
-          <h2 class="!mb-0">Crop boxes</h2>
-          <span class="text-xs text-mute"><b class="text-face">Facecam</b> and <b class="text-main">main</b> boxes keep the aspect of their output area</span>
+          <h2 class="!mb-0">Video preview</h2>
+          <label class="flex items-center gap-2 text-xs text-mute"><input type="checkbox" id="reframeToggle" disabled> Crop Box / Reframe</label>
         </div>
+        <p id="cropHelp" class="hidden text-xs text-mute mb-2"><b class="text-face">Facecam</b> and <b class="text-main">main</b> boxes keep the aspect of their output area.</p>
         <div id="frameWrap" class="relative w-full bg-black rounded overflow-hidden select-none" style="min-height:180px">
           <video id="srcVideo" class="block w-full" playsinline preload="auto"></video>
           <div class="box main" id="boxMain"><span class="tag">Main</span><i class="h" data-c="nw"></i><i class="h" data-c="ne"></i><i class="h" data-c="sw"></i><i class="h" data-c="se"></i></div>
@@ -127,7 +128,7 @@
 
   <!-- RIGHT -->
   <section class="flex flex-col gap-4 lg:col-span-2 2xl:col-span-1 2xl:row-auto">
-    <div class="panel">
+    <div class="panel hidden" id="framingPanel">
       <h2>Layout</h2>
       <div class="seg grid-cols-2" id="layouts">
         <button data-l="split50" aria-pressed="true">Split 50/50</button>

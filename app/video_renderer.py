@@ -147,8 +147,16 @@ def export_webm_alpha(list_path: Path, out: Path, meta: dict, on_progress=None) 
 
 def export_mp4(src: Path, list_path: Path, out: Path, meta: dict, layout_args: dict, on_progress=None) -> dict:
     fps, dur = meta["fps_str"], meta["duration"]
-    layout = build_layout(sw=meta["width"], sh=meta["height"], fps=fps, dur=dur, src="0:v", **layout_args)
-    fc = (f"{layout};[1:v]fps={fps},format=rgba[sub];"
+    if layout_args.get("reframe", False):
+        layout = build_layout(sw=meta["width"], sh=meta["height"], fps=fps, dur=dur, src="0:v",
+                              **{k: v for k, v in layout_args.items() if k != "reframe"})
+        subtitle_filter = f"fps={fps},format=rgba"
+    else:
+        layout = "[0:v]null[base]"
+        width, height = meta["width"], meta["height"]
+        subtitle_filter = (f"fps={fps},scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                           f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba")
+    fc = (f"{layout};[1:v]{subtitle_filter}[sub];"
           f"[base][sub]overlay=0:0:format=auto:eof_action=pass,format=yuv420p[v]")
     common = ["-i", str(src), "-f", "concat", "-safe", "0", "-i", str(list_path), "-filter_complex", fc,
               "-map", "[v]", "-map", "0:a?", "-c:a", "aac", "-b:a", "192k", "-t", f"{dur:.3f}", "-movflags", "+faststart"]
@@ -173,7 +181,11 @@ def export_mp4(src: Path, list_path: Path, out: Path, meta: dict, layout_args: d
 
 def layout_still(src: Path, t: float, meta: dict, layout_args: dict, out_png: Path):
     """Single composited layout frame (no subtitles) for the live preview."""
-    layout = build_layout(sw=meta["width"], sh=meta["height"], fps="30", dur=1.0, src="0:v", **layout_args)
+    if layout_args.get("reframe", True):
+        layout = build_layout(sw=meta["width"], sh=meta["height"], fps="30", dur=1.0, src="0:v",
+                              **{k: v for k, v in layout_args.items() if k != "reframe"})
+    else:
+        layout = "[0:v]null[base]"
     fc = f"{layout};[base]scale=540:960[v]"
     run_ffmpeg(["-ss", f"{max(t, 0):.3f}", "-i", str(src), "-filter_complex", fc, "-map", "[v]",
                 "-frames:v", "1", str(out_png)], 0)

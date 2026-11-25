@@ -311,7 +311,7 @@ def _layout_args(req: dict) -> dict:
     full = {"x": 0, "y": 0, "w": 1, "h": 1}
     return {"layout": req.get("layout", "split50"), "main": req.get("main_crop") or full,
             "face": req.get("face_crop") or full, "pip_corner": req.get("pip_corner", "br"),
-            "blur_bg": bool(req.get("blur_bg"))}
+            "blur_bg": bool(req.get("blur_bg")), "reframe": bool(req.get("reframe", False))}
 
 
 @app.post("/api/jobs/{job_id}/layout_preview")

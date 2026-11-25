@@ -16,7 +16,7 @@ async function api(url, body, method = 'POST', signal) {
 const SAMPLE = ['Highlight', 'every', 'word'].map((w, i) => ({ w, start: i, end: i + 1 }));
 const S = {
   job: null, words: [], phrases: [], selPhrase: 0, selWord: 1, t: 0,
-  layout: 'split50', pip: 'br', blur: false, mode: 'mp4', showVideo: true,
+  layout: 'split50', pip: 'br', blur: false, reframe: false, mode: 'mp4', showVideo: true,
   chunk: { max_words: 3, max_chars: 24, pause: 0.55 },
   style: {}, main: { x: .2, y: 0, w: .6, h: 1 }, face: { x: .7, y: .55, w: .3, h: .4 },
 };
@@ -275,6 +275,11 @@ function togglePlay() {
 function initJob(job) {
   stopSampleLoop();
   S.job = job; S.words = job.words || [];
+  S.reframe = false;
+  $('#reframeToggle').checked = false;
+  $('#reframeToggle').disabled = job.kind !== 'video';
+  updateReframeUI();
+  drawLayoutFrame();
   triedProxy = false;
   const m = job.meta, isVideo = job.kind === 'video';
   $('#jobname').textContent = `${job.name} · ${m.duration.toFixed(1)}s${isVideo ? ` · ${m.width}×${m.height} · ${m.fps.toFixed(2)} fps` : ' · audio'}`;
@@ -420,7 +425,8 @@ function applyLayoutDefaults(reset = false) {
   if (reset) { S.main = { x: .2, y: 0, w: .6, h: 1 }; S.face = { x: .66, y: .5, w: .3, h: .45 }; }
   S.main = a.main ? fitBox(S.main, a.main) : (S.blur ? { x: 0, y: 0, w: 1, h: 1 } : S.main);
   if (a.face) S.face = fitBox(S.face, a.face);
-  $('#boxFace').style.display = a.face ? '' : 'none';
+  $('#boxMain').style.display = S.reframe ? '' : 'none';
+  $('#boxFace').style.display = S.reframe && a.face ? '' : 'none';
   drawBoxes();
 }
 
@@ -472,6 +478,20 @@ function setLayout(l) {
   $('#blurOpt').classList.toggle('hidden', l !== 'single'); $('#blurOpt').classList.toggle('flex', l === 'single');
   applyLayoutDefaults(); drawLayoutFrame();
 }
+function updateReframeUI() {
+  $('#framingPanel').classList.toggle('hidden', !S.reframe);
+  $('#cropHelp').classList.toggle('hidden', !S.reframe);
+  if ($('#boxMain')) $('#boxMain').style.display = S.reframe ? '' : 'none';
+  if ($('#boxFace')) $('#boxFace').style.display = S.reframe && ASPECT().face ? '' : 'none';
+}
+function setReframe(enabled) {
+  S.reframe = Boolean(enabled && S.job && S.job.kind === 'video');
+  $('#reframeToggle').checked = S.reframe;
+  updateReframeUI();
+  if (S.reframe) applyLayoutDefaults();
+  drawLayoutFrame();
+}
+$('#reframeToggle').onchange = e => setReframe(e.target.checked);
 $$('#layouts button').forEach(b => b.onclick = () => setLayout(b.dataset.l));
 $$('#corners button').forEach(b => b.onclick = () => {
   S.pip = b.dataset.c; $$('#corners button').forEach(x => x.setAttribute('aria-pressed', x === b)); drawLayoutFrame();
@@ -547,7 +567,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
 }
 
 function drawLayoutFrame() {
-  const show = Boolean(S.job && S.job.kind === 'video' && S.showVideo);
+  const show = Boolean(S.reframe && S.job && S.job.kind === 'video' && S.showVideo);
   layCanvas.classList.toggle('hidden', !show);
   if (!show || vid.readyState < 2 || !vid.videoWidth) return;
 
@@ -876,7 +896,7 @@ $('#render').onclick = async () => {
     S.words.sort((a, b) => a.start - b.start);
     await api(`/api/jobs/${S.job.job_id}/render`, {
       mode: S.mode, words: S.words, chunk: S.chunk, style: S.style, layout: S.layout,
-      main_crop: S.main, face_crop: S.face, pip_corner: S.pip, blur_bg: S.blur });
+      reframe: S.reframe, main_crop: S.main, face_crop: S.face, pip_corner: S.pip, blur_bg: S.blur });
     track(S.job.job_id); setStatus('render', 0, 'starting render');
   } catch (e) { setStatus('render', 0, e.message, 'error'); $('#render').disabled = false; }
 };
