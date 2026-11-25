@@ -48,8 +48,10 @@ const SECTIONS = [
     { k: 'pad_x', label: 'Padding X', t: 'range', min: 0, max: 60, step: 1 },
     { k: 'pad_y', label: 'Padding Y', t: 'range', min: 0, max: 40, step: 1 }] },
   { title: 'Active word', show: () => S.style.style === 'pop', controls: [
-    { k: 'pop_color', label: 'Color', t: 'color' },
-    { k: 'pop_scale', label: 'Scale', t: 'range', min: 1, max: 1.4, step: .01, fmt: v => Math.round(v * 100) + '%' }] },
+    { k: 'pop_color', label: 'Color', t: 'color' }] },
+  { title: 'Pop animation', show: () => S.style.style === 'pill' || S.style.style === 'pop', controls: [
+    { k: 'pop_scale', label: 'Pop scale', t: 'range', min: 1, max: 1.4, step: .01, fmt: v => Math.round(v * 100) + '%' },
+    { k: 'pop_duration', label: 'Pop speed', t: 'range', min: 0, max: .35, step: .01, fmt: v => Math.round(v * 1000) + 'ms' }] },
 ];
 
 function buildControls(host, sections, obj, onChange) {
@@ -200,7 +202,11 @@ function setPlayLabels() {
 }
 
 function stopSampleLoop() {
-  if (sampleTimer) { clearInterval(sampleTimer); sampleTimer = null; }
+  if (sampleTimer) {
+    clearInterval(sampleTimer);
+    sampleTimer = null;
+    if (!S.job) refreshLivePreview(S.phrases.length ? S.selPhrase : -1, S.selWord, false, null);
+  }
   setPlayLabels();
 }
 
@@ -228,18 +234,29 @@ function seekTo(t) {
   updateTimeUI(clamped);
   if (vid.readyState >= 1) vid.currentTime = clamped;
   drawLayoutFrame();
-  syncSubtitleToTime(clamped, !vid.paused);
+  syncSubtitleToTime(clamped, false);
 }
 
 function togglePlay() {
   if (!S.job) {
     if (sampleTimer) { stopSampleLoop(); return; }
     setPlayLabels();
+    let sampleElapsed = 0;
     sampleTimer = setInterval(() => {
+      sampleElapsed += 33 / 1000;
       const ph = S.phrases[S.selPhrase] || { words: SAMPLE };
-      S.selWord = (S.selWord + 1) % ph.words.length;
-      scheduleOverlay();
-    }, 450);
+      if (sampleElapsed >= 0.45) {
+        S.selWord = (S.selWord + 1) % ph.words.length;
+        sampleElapsed = 0;
+      }
+      const animT = quantizeAnimT(sampleElapsed);
+      refreshLivePreview(
+        S.phrases.length ? S.selPhrase : -1,
+        S.selWord,
+        true,
+        animT
+      );
+    }, 33);
     setPlayLabels();
     return;
   }
@@ -594,6 +611,12 @@ let ovlVer = 0, ovlController = null, ovlTargetKey = '', ovlActiveKey = '';
 let overlayRefreshTimer = null;
 const ovlCache = new Map();
 
+function quantizeAnimT(elapsed) {
+  const duration = Number(S.style.pop_duration || 0);
+  if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed >= duration || duration <= 0) return null;
+  return Math.round(elapsed * 30) / 30;
+}
+
 function cancelOverlayRender() {
   if (ovlController) ovlController.abort();
   ovlController = null;
@@ -619,22 +642,22 @@ function setOverlayBlob(url) {
   }
 }
 
-function overlayStateKey(pi, wi, ver) {
+function overlayStateKey(pi, wi, ver, animT = null) {
   const ph = S.phrases[pi];
   const active = ph ? Math.max(0, Math.min(wi, ph.words.length - 1)) : Math.max(0, Math.min(S.selWord, SAMPLE.length - 1));
-  return `${ver}:${ph ? pi : 'sample'}:${active}`;
+  return `${ver}:${ph ? pi : 'sample'}:${active}:${animT === null ? 'static' : animT.toFixed(4)}`;
 }
 
-async function fetchOverlayState(pi, wi, ver, signal) {
+async function fetchOverlayState(pi, wi, ver, signal, animT = null) {
   const ph = S.phrases[pi];
   const words = ph ? ph.words : SAMPLE;
   const active = ph ? Math.max(0, Math.min(wi, ph.words.length - 1)) : Math.max(0, Math.min(S.selWord, SAMPLE.length - 1));
-  const key = overlayStateKey(pi, wi, ver);
+  const key = overlayStateKey(pi, wi, ver, animT);
   if (ovlCache.has(key)) return { key, url: ovlCache.get(key) };
-  const blob = await (await api('/api/preview', { words, active, style: S.style }, 'POST', signal)).blob();
+  const blob = await (await api('/api/preview', { words, active, style: S.style, anim_t: animT }, 'POST', signal)).blob();
   const url = URL.createObjectURL(blob);
   if (signal.aborted || ver !== ovlVer) { URL.revokeObjectURL(url); return null; }
-  if (ovlCache.size >= 150) {
+  if (ovlCache.size >= 240) {
     const oldest = ovlCache.keys().next().value;
     URL.revokeObjectURL(ovlCache.get(oldest));
     ovlCache.delete(oldest);
@@ -643,21 +666,33 @@ async function fetchOverlayState(pi, wi, ver, signal) {
   return { key, url };
 }
 
-function prefetchNextStates(pi, wi, ver, signal) {
-  if (!S.phrases.length) return;
-  let p = pi, w = wi;
-  for (let step = 0; step < 4; step++) {
-    w++;
-    if (w >= S.phrases[p].words.length) { p++; w = 0; }
-    if (p >= S.phrases.length) break;
-    const key = `${ver}:${p}:${w}`;
-    if (!ovlCache.has(key)) fetchOverlayState(p, w, ver, signal).catch(() => {});
+function prefetchNextStates(pi, wi, ver, signal, animT = null) {
+  if (S.phrases.length) {
+    let p = pi, w = wi;
+    for (let step = 0; step < 4; step++) {
+      w++;
+      if (w >= S.phrases[p].words.length) { p++; w = 0; }
+      if (p >= S.phrases.length) break;
+      const key = overlayStateKey(p, w, ver, null);
+      if (!ovlCache.has(key)) fetchOverlayState(p, w, ver, signal, null).catch(() => {});
+    }
+  }
+  if (animT !== null) {
+    const duration = Number(S.style.pop_duration || 0);
+    for (let step = 1; step <= 30; step++) {
+      const nextT = step / 30;
+      if (nextT >= duration) break;
+      const quantized = quantizeAnimT(nextT);
+      if (quantized === null) continue;
+      const key = overlayStateKey(pi, wi, ver, quantized);
+      if (!ovlCache.has(key)) fetchOverlayState(pi, wi, ver, signal, quantized).catch(() => {});
+    }
   }
 }
 
-async function renderTargetState(pi, wi, playing = !vid.paused) {
+async function renderTargetState(pi, wi, playing = !vid.paused, animT = null) {
   const ver = ovlVer;
-  const key = overlayStateKey(pi, wi, ver);
+  const key = overlayStateKey(pi, wi, ver, animT);
   if (ovlActiveKey === key || ovlTargetKey === key) return;
   cancelOverlayRender();
   const controller = new AbortController();
@@ -665,12 +700,12 @@ async function renderTargetState(pi, wi, playing = !vid.paused) {
   ovlTargetKey = key;
   let succeeded = false;
   try {
-    const res = await fetchOverlayState(pi, wi, ver, controller.signal);
+    const res = await fetchOverlayState(pi, wi, ver, controller.signal, animT);
     if (!res || controller.signal.aborted || ver !== ovlVer) return;
     ovlActiveKey = res.key;
     setOverlayBlob(res.url);
     succeeded = true;
-    if (S.phrases[pi] && playing) prefetchNextStates(pi, wi, ver, controller.signal);
+    if (S.phrases[pi] && playing) prefetchNextStates(pi, wi, ver, controller.signal, animT);
   } catch (e) {
     if (e.name !== 'AbortError') setStatus('render', 0, e.message, 'error');
   }
@@ -680,14 +715,14 @@ async function renderTargetState(pi, wi, playing = !vid.paused) {
   }
 }
 
-function refreshLivePreview(pi, wi, playing) {
+function refreshLivePreview(pi, wi, playing, animT = null) {
   if (overlayRefreshTimer !== null) clearTimeout(overlayRefreshTimer);
   overlayRefreshTimer = null;
   if (pi === undefined) {
     pi = S.phrases.length ? Math.min(S.selPhrase, S.phrases.length - 1) : -1;
     wi = S.phrases.length && pi >= 0 ? Math.min(S.selWord, S.phrases[pi].words.length - 1) : S.selWord;
   }
-  renderTargetState(pi, wi, playing);
+  renderTargetState(pi, wi, playing, animT);
 }
 
 function scheduleOverlay() {
@@ -751,9 +786,10 @@ function syncSubtitleToTime(t, playing) {
   S.selWord = hit.wi;
   updateActiveTranscriptMarks(hit.pi, hit.wi);
 
-  const key = `${ovlVer}:${hit.pi}:${hit.wi}`;
+  const animT = playing ? quantizeAnimT(t - S.phrases[hit.pi].words[hit.wi].start) : null;
+  const key = overlayStateKey(hit.pi, hit.wi, ovlVer, animT);
   if (ovlActiveKey === key) return;
-  refreshLivePreview(hit.pi, hit.wi, playing);
+  refreshLivePreview(hit.pi, hit.wi, playing, animT);
 }
 
 /* ------------------------------------------------------------------ chunking + transcript grid */
@@ -886,7 +922,9 @@ window.addEventListener('pywebviewready', enableDesktopUI);
   buildControls($('#styleControls'), SECTIONS, S.style, k => {
     if (k === 'style') refreshSectionVisibility();
     localStorage.setItem('subgen.style', JSON.stringify(S.style));
-    invalidateOverlayCache(['style', 'font', 'uppercase', 'box_fill', 'box_stroke'].includes(k));
+    invalidateOverlayCache(['style', 'font', 'uppercase', 'box_fill', 'box_stroke',
+      'pop_color', 'pop_scale', 'pop_duration', 'highlight_color', 'box_stroke',
+      'box_stroke_color', 'box_stroke_width', 'border_radius', 'pad_x', 'pad_y'].includes(k));
   });
   const CHUNK = [{ title: '', show: () => true, controls: [
     { k: 'max_words', label: 'Words per line', t: 'range', min: 1, max: 5, step: 1 },
