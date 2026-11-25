@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import logging
 import os
 from pathlib import Path
+import re
 import sys
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -14,10 +16,20 @@ LOGGER = logging.getLogger(__name__)
 W, H = 1080, 1920
 PREFERRED = ["Montserrat-ExtraBold", "Poppins-ExtraBold", "Anton-Regular"]
 BREAK_CHARS = ".,?!;:…"
+LEGACY_FONT_NAMES = {
+    "arial": "Arial",
+    "arialbd": "Arial Bold",
+    "arialbi": "Arial Bold Italic",
+    "ariali": "Arial Italic",
+    "antqua": "Book Antiqua",
+    "antquab": "Book Antiqua Bold",
+    "antquai": "Book Antiqua Italic",
+    "bkant": "Book Antiqua",
+}
 
 DEFAULT_STYLE = {
     "style": "pill",            # pill | pop | popin
-    "font": "Montserrat-ExtraBold",
+    "font": "Montserrat ExtraBold",
     "font_size": 84,
     "line_spacing": 1.0,
     "uppercase": True,
@@ -74,27 +86,98 @@ def _font_files(directory: Path) -> list[Path]:
     )
 
 
+def _clean_font_name(path: Path) -> str:
+    stem = path.stem
+    legacy = LEGACY_FONT_NAMES.get(stem.casefold())
+    if legacy:
+        return legacy
+    for suffix, style in (("bi", "Bold Italic"), ("bd", "Bold"), ("it", "Italic")):
+        if stem.casefold().endswith(suffix) and len(stem) > len(suffix):
+            base = _clean_font_words(stem[:-len(suffix)])
+            return f"{base} {style}"
+    return _clean_font_words(stem)
+
+
+def _clean_font_words(stem: str) -> str:
+    words = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", stem.replace("_", " ").replace("-", " "))
+    return " ".join(part.capitalize() if part.isupper() or part.islower() else part for part in words.split())
+
+
+def _font_display_name(path: Path) -> str:
+    try:
+        family, style = ImageFont.truetype(str(path), 16).getname()
+        family = family.decode("utf-8", errors="replace") if isinstance(family, bytes) else family
+        style = style.decode("utf-8", errors="replace") if isinstance(style, bytes) else style
+        name = " ".join(part.strip() for part in (family, style) if part and part.strip())
+        if name:
+            return name
+    except Exception:
+        LOGGER.debug("Could not read font metadata from %s", path, exc_info=True)
+    return _clean_font_name(path)
+
+
 @functools.lru_cache(maxsize=1)
+def _font_index() -> tuple[dict[str, Path], dict[str, str], dict[str, str]]:
+    catalog: dict[str, Path] = {}
+    aliases: dict[str, str] = {}
+    for path in [*_font_files(FONT_DIR), *(
+        font_path
+        for directory in _system_font_dirs()
+        for font_path in _font_files(directory)
+    )]:
+        name = _font_display_name(path)
+        if name in catalog:
+            base_name = name
+            suffix = 2
+            while name in catalog:
+                name = f"{base_name} ({suffix})"
+                suffix += 1
+        catalog[name] = path
+        aliases.setdefault(path.stem, name)
+        aliases.setdefault(path.stem.casefold(), name)
+
+    file_ids = {
+        hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:20]: str(path)
+        for path in catalog.values()
+    }
+    return catalog, aliases, file_ids
+
+
 def _font_catalog() -> dict[str, Path]:
-    paths: dict[str, Path] = {}
-    for path in _font_files(FONT_DIR):
-        paths.setdefault(path.stem, path)
-    for directory in _system_font_dirs():
-        for path in _font_files(directory):
-            paths.setdefault(path.stem, path)
-    return paths
+    return _font_index()[0]
+
+
+def font_aliases() -> dict[str, str]:
+    return _font_index()[1]
+
+
+def font_file_ids() -> dict[str, str]:
+    return {
+        name: hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:20]
+        for name, path in _font_catalog().items()
+    }
+
+
+def font_file_path(font_id: str) -> Path | None:
+    path = _font_index()[2].get(font_id)
+    return Path(path) if path else None
 
 
 def list_fonts() -> list[str]:
-    paths = _font_catalog()
-    preferred = [name for name in PREFERRED if name in paths]
+    paths, aliases, _ = _font_index()
+    preferred = [aliases[name] for name in PREFERRED if name in aliases and aliases[name] in paths]
+    preferred = list(dict.fromkeys(preferred))
     remaining = sorted((name for name in paths if name not in preferred), key=str.casefold)
     return preferred + remaining
 
 
 @functools.lru_cache(maxsize=64)
 def get_font(name: str, size: int) -> ImageFont.FreeTypeFont:
-    path = _font_catalog().get(name)
+    catalog = _font_catalog()
+    path = catalog.get(name)
+    if path is None:
+        alias = font_aliases().get(name) or font_aliases().get(name.casefold())
+        path = catalog.get(alias) if alias else None
     if path:
         f = ImageFont.truetype(str(path), size)
         try:  # variable fonts: pick the ExtraBold instance

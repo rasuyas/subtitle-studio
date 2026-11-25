@@ -139,7 +139,21 @@ def health():
 
 @app.get("/api/fonts")
 def fonts():
-    return {"fonts": se.list_fonts(), "default_style": se.DEFAULT_STYLE}
+    return {
+        "fonts": se.list_fonts(),
+        "font_aliases": se.font_aliases(),
+        "font_files": se.font_file_ids(),
+        "default_style": se.DEFAULT_STYLE,
+    }
+
+
+@app.get("/api/fonts/file/{font_id}")
+def font_file(font_id: str):
+    path = se.font_file_path(font_id)
+    if path is None or not path.is_file():
+        raise HTTPException(404, "Font file not found")
+    media_type = "font/otf" if path.suffix.lower() == ".otf" else "font/ttf"
+    return FileResponse(path, media_type=media_type)
 
 
 @app.get("/api/models")

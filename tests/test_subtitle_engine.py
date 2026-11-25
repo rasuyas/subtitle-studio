@@ -1,6 +1,8 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+from app import subtitle_engine as se
 from app.subtitle_engine import _layout, render_state
 
 
@@ -39,6 +41,32 @@ class SubtitleLayoutTests(unittest.TestCase):
         self.assertIsNotNone(compact)
         self.assertIsNotNone(expanded)
         self.assertGreater(expanded[3] - expanded[1], compact[3] - compact[1])
+
+
+class FontCatalogTests(unittest.TestCase):
+    def tearDown(self):
+        se._font_index.cache_clear()
+        se.get_font.cache_clear()
+
+    def test_font_metadata_names_and_legacy_filename_alias_preserve_path(self):
+        path = se.FONT_DIR / "arialbd.ttf"
+        font = type("Font", (), {"getname": lambda self: ("Arial", "Bold")})()
+
+        with (
+            patch.object(se, "_font_files", side_effect=lambda directory: [path] if directory == se.FONT_DIR else []),
+            patch.object(se, "_system_font_dirs", return_value=[]),
+            patch.object(se.ImageFont, "truetype", return_value=font),
+        ):
+            se._font_index.cache_clear()
+            se.get_font.cache_clear()
+            self.assertEqual(se.list_fonts(), ["Arial Bold"])
+            self.assertEqual(se._font_catalog()["Arial Bold"], path)
+            self.assertEqual(se.get_font("arialbd", 16), font)
+            self.assertEqual(se.font_file_path(se.font_file_ids()["Arial Bold"]), path)
+
+    def test_unreadable_font_metadata_uses_clean_legacy_name(self):
+        with patch.object(se.ImageFont, "truetype", side_effect=OSError("bad font")):
+            self.assertEqual(se._font_display_name(Path("ANTQUAB.ttf")), "Book Antiqua Bold")
 
 
 if __name__ == "__main__":

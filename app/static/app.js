@@ -55,6 +55,27 @@ const SECTIONS = [
     { k: 'pop_duration', label: 'Pop speed', t: 'range', min: 0, max: .35, step: .01, fmt: v => Math.round(v * 1000) + 'ms' }] },
 ];
 
+let fontFileIds = {};
+let fontFaceRules = new Set();
+let fontFaceStylesheet;
+
+function fontFamilyFor(name) {
+  const fileId = fontFileIds[name];
+  if (!fileId) return JSON.stringify(name || 'sans-serif');
+  if (!fontFaceRules.has(fileId)) {
+    if (!fontFaceStylesheet) {
+      fontFaceStylesheet = document.createElement('style');
+      document.head.appendChild(fontFaceStylesheet);
+    }
+    fontFaceStylesheet.sheet.insertRule(
+      `@font-face { font-family: "SubtitleStudio_${fileId}"; src: url("/api/fonts/file/${fileId}"); font-display: swap; }`,
+      fontFaceStylesheet.sheet.cssRules.length,
+    );
+    fontFaceRules.add(fileId);
+  }
+  return `"SubtitleStudio_${fileId}"`;
+}
+
 function buildControls(host, sections, obj, onChange) {
   host.innerHTML = '';
   sections.forEach(sec => {
@@ -67,43 +88,153 @@ function buildControls(host, sections, obj, onChange) {
       const val = `<span class="val"></span>`;
       let input;
       if (c.t === 'select') {
-        const select = `<select class="field" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
         input = c.searchable
-          ? `<div><input class="field" type="search" placeholder="Search fonts..." aria-label="Search fonts" style="margin-bottom:5px">${select}</div>`
-          : select;
+          ? `<div class="font-picker">
+              <button class="field font-picker-trigger" type="button" data-k="${c.k}" role="combobox"
+                aria-haspopup="listbox" aria-expanded="false">
+                <span class="font-picker-label" data-font-label></span><span class="font-picker-caret" aria-hidden="true">▾</span>
+              </button>
+              <div class="font-picker-popup hidden">
+                <input class="field font-picker-search" type="search" placeholder="Search fonts..." aria-label="Search fonts" autocomplete="off">
+                <div class="font-picker-list" role="listbox" aria-label="Fonts"></div>
+              </div>
+            </div>`
+          : `<select class="field" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
       }
       else if (c.t === 'range') input = `<input type="range" data-k="${c.k}" min="${c.min}" max="${c.max}" step="${c.step}">`;
       else if (c.t === 'color') input = `<input type="color" data-k="${c.k}">`;
       else input = `<input type="checkbox" data-k="${c.k}">`;
       row.innerHTML = `<span>${c.label}</span><div>${input}</div>${c.t === 'range' ? val : '<span></span>'}`;
       const el = $('[data-k]', row);
-      const search = c.searchable ? $('input[type="search"]', row) : null;
       const sync = () => { const v = $('.val', row); if (v) v.textContent = c.fmt ? c.fmt(obj[c.k]) : obj[c.k]; };
+
+      if (c.searchable) {
+        const picker = $('.font-picker', row);
+        const trigger = $('.font-picker-trigger', picker);
+        const label = $('[data-font-label]', picker);
+        const popup = $('.font-picker-popup', picker);
+        const search = $('.font-picker-search', picker);
+        const list = $('.font-picker-list', picker);
+        const rowHeight = 36;
+        const maxListHeight = 280;
+        let matches = c.opts;
+        let renderScheduled = false;
+
+        const syncPicker = () => {
+          label.textContent = obj[c.k] || '';
+          label.style.fontFamily = fontFamilyFor(obj[c.k]);
+          trigger.setAttribute('aria-label', `Font: ${obj[c.k] || 'Select font'}`);
+        };
+        const renderRows = () => {
+          const scrollTop = list.scrollTop;
+          list.replaceChildren();
+          if (!matches.length) {
+            list.style.height = `${rowHeight}px`;
+            list.scrollTop = 0;
+            const empty = document.createElement('div');
+            empty.className = 'font-picker-empty';
+            empty.textContent = 'No matching fonts';
+            list.appendChild(empty);
+            return;
+          }
+          const viewportHeight = Math.min(maxListHeight, Math.max(rowHeight, matches.length * rowHeight));
+          list.style.height = `${viewportHeight}px`;
+          const start = Math.max(0, Math.floor(scrollTop / rowHeight) - 3);
+          const count = Math.ceil(viewportHeight / rowHeight) + 6;
+          const end = Math.min(matches.length, start + count);
+          const top = document.createElement('div');
+          top.setAttribute('aria-hidden', 'true');
+          top.style.height = `${start * rowHeight}px`;
+          list.appendChild(top);
+          for (const [name] of matches.slice(start, end)) {
+            const option = document.createElement('button');
+            option.type = 'button';
+            option.className = 'font-picker-option';
+            option.setAttribute('role', 'option');
+            option.setAttribute('aria-selected', String(name === obj[c.k]));
+            option.textContent = name;
+            option.style.fontFamily = fontFamilyFor(name);
+            option.addEventListener('pointerdown', event => event.preventDefault());
+            option.addEventListener('click', () => {
+              obj[c.k] = name;
+              syncPicker();
+              closePicker(true);
+              onChange(c.k);
+            });
+            list.appendChild(option);
+          }
+          const bottom = document.createElement('div');
+          bottom.setAttribute('aria-hidden', 'true');
+          bottom.style.height = `${Math.max(0, (matches.length - end) * rowHeight)}px`;
+          list.appendChild(bottom);
+          list.scrollTop = scrollTop;
+        };
+        const filterRows = () => {
+          const query = search.value.trim().toLowerCase();
+          matches = c.opts.filter(([name, labelText]) =>
+            `${name} ${labelText}`.toLowerCase().includes(query));
+          list.scrollTop = 0;
+          renderRows();
+        };
+        const closePicker = restoreFocus => {
+          popup.classList.add('hidden');
+          trigger.setAttribute('aria-expanded', 'false');
+          if (restoreFocus) trigger.focus();
+        };
+        const openPicker = () => {
+          search.value = '';
+          matches = c.opts;
+          list.scrollTop = 0;
+          popup.classList.remove('hidden');
+          trigger.setAttribute('aria-expanded', 'true');
+          renderRows();
+          search.focus();
+        };
+
+        syncPicker();
+        trigger.addEventListener('click', () => {
+          if (popup.classList.contains('hidden')) openPicker();
+          else closePicker(false);
+        });
+        trigger.addEventListener('keydown', event => {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            openPicker();
+          }
+        });
+        search.addEventListener('input', filterRows);
+        search.addEventListener('keydown', event => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            closePicker(true);
+          }
+        });
+        list.addEventListener('scroll', () => {
+          if (renderScheduled) return;
+          renderScheduled = true;
+          requestAnimationFrame(() => {
+            renderScheduled = false;
+            renderRows();
+          });
+        }, { passive: true });
+        picker.addEventListener('focusout', () => {
+          window.setTimeout(() => {
+            if (!picker.contains(document.activeElement)) closePicker(false);
+          }, 0);
+        });
+        document.addEventListener('pointerdown', event => {
+          if (!picker.contains(event.target)) closePicker(false);
+        });
+        document.addEventListener('keydown', event => {
+          if (event.key === 'Escape' && !popup.classList.contains('hidden')) closePicker(true);
+        });
+        c.el = trigger;
+        wrap.appendChild(row);
+        return;
+      }
+
       if (c.t === 'check') el.checked = !!obj[c.k]; else el.value = obj[c.k];
       sync();
-      if (search) search.addEventListener('input', () => {
-        const query = search.value.toLowerCase();
-        const matches = c.opts.filter(([value, label]) => `${value} ${label}`.toLowerCase().includes(query));
-        el.replaceChildren();
-        if (!matches.length) {
-          const option = document.createElement('option');
-          option.textContent = 'No matching fonts';
-          option.disabled = true;
-          option.selected = true;
-          el.appendChild(option);
-        } else {
-          matches.forEach(([value, label]) => {
-            const option = document.createElement('option');
-            option.value = value;
-            option.textContent = label;
-            el.appendChild(option);
-          });
-          const selected = matches.find(([value]) => value === obj[c.k]) || matches[0];
-          el.value = selected[0];
-          obj[c.k] = selected[0];
-        }
-        onChange(c.k);
-      });
       el.addEventListener('input', () => {
         obj[c.k] = c.t === 'check' ? el.checked : (c.t === 'range' ? parseFloat(el.value) : el.value);
         sync(); onChange(c.k);
@@ -1250,8 +1381,11 @@ window.addEventListener('pywebviewready', enableDesktopUI);
   const meta = await (await api('/api/fonts', null, 'GET')).json();
   let saved = {}; try { saved = JSON.parse(localStorage.getItem('subgen.style') || '{}'); } catch { /* ignore */ }
   S.style = { ...meta.default_style, ...saved };
-  if (!meta.fonts.includes(S.style.font)) S.style.font = meta.fonts[0] || S.style.font;
-  SECTIONS[1].controls[0].opts = meta.fonts.map(f => [f, f.replace(/-/g, ' ')]);
+  if (!meta.fonts.includes(S.style.font)) {
+    S.style.font = meta.font_aliases?.[S.style.font] || meta.font_aliases?.[S.style.font.toLowerCase()] || meta.fonts[0] || S.style.font;
+  }
+  fontFileIds = meta.font_files || {};
+  SECTIONS[1].controls[0].opts = meta.fonts.map(f => [f, f]);
   buildControls($('#styleControls'), SECTIONS, S.style, k => {
     if (k === 'style') refreshSectionVisibility();
     localStorage.setItem('subgen.style', JSON.stringify(S.style));
