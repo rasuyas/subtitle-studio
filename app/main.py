@@ -27,6 +27,7 @@ from .transcriber import MODELS_DIR, list_custom_models
 _SUBPROC_KW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
 ROOT = Path(__file__).resolve().parent.parent
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip() if (ROOT / "VERSION").exists() else "0.0.0"
 WORK, EXPORTS, STATIC = ROOT / "workspace", ROOT / "exports", Path(__file__).parent / "static"
 for d in (WORK, EXPORTS, se.FONT_DIR, MODELS_DIR):
     d.mkdir(exist_ok=True)
@@ -123,7 +124,7 @@ def index():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "version": VERSION}
 
 
 @app.get("/api/fonts")
