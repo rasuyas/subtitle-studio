@@ -27,8 +27,9 @@ DEFAULT_STYLE = {
     "highlight_color": "#E50914", "box_fill": True, "box_stroke": False,
     "box_stroke_color": "#FFFFFF", "box_stroke_width": 4,
     "border_radius": 14, "pad_x": 22, "pad_y": 10,
-    # color pop style
-    "pop_color": "#FFE600", "pop_scale": 1.12,
+    # color pop & animation
+    "pop_color": "#FFE600", "pop_scale": 1.15,
+    "pop_duration": 0.14,       # seconds for the zoom-in/settle pop animation
 }
 
 
@@ -137,20 +138,59 @@ def chunk_words(words: list[dict], max_words: int = 3, max_chars: int = 24, paus
     return phrases
 
 
-def build_timeline(phrases: list[dict], total: float, fps: float = 30.0, hold: float = 0.2):
-    """Return [(key, t0, t1)] covering [0, total]. key=None is blank, else (phrase_idx, active_word_idx)."""
+def _pop_factor(anim_t: float | None, duration: float, peak: float, rest: float = 1.0,
+                start: float = 0.0) -> float:
+    """Return animated scale multiplier: quick zoom from `start` -> `peak`, then settle to `rest`."""
+    if anim_t is None or duration <= 0 or anim_t >= duration:
+        return rest
+    u = max(0.0, min(1.0, anim_t / duration))
+    split = 0.45
+    if u < split:
+        t = u / split
+        eased = 1.0 - (1.0 - t) ** 3
+        return start + (peak - start) * eased
+    t = (u - split) / (1.0 - split)
+    eased = t * t * (3.0 - 2.0 * t)
+    return peak + (rest - peak) * eased
+
+
+def build_timeline(phrases: list[dict], total: float, fps: float = 30.0,
+                   hold: float = 0.2, style: dict | None = None):
+    """Return [(key, t0, t1)] covering [0, total].
+    key=None is blank, else (phrase_idx, active_word_idx, anim_t_or_None).
+    """
+    st = {**DEFAULT_STYLE, **(style or {})}
+    anim_mode = st["style"] in ("pill", "pop")
+    pop_dur = float(st.get("pop_duration", 0.14)) if anim_mode else 0.0
+    dt = 1.0 / max(fps, 1.0)
+
     events = []
     for pi, p in enumerate(phrases):
         ws = p["words"]
         nxt = phrases[pi + 1]["words"][0]["start"] if pi + 1 < len(phrases) else total
         for wi, w in enumerate(ws):
-            t1 = ws[wi + 1]["start"] if wi + 1 < len(ws) else min(w["end"] + hold, nxt)
-            events.append(((pi, wi), w["start"], t1))
+            w0 = w["start"]
+            w1 = ws[wi + 1]["start"] if wi + 1 < len(ws) else min(w["end"] + hold, nxt)
+            if w1 <= w0:
+                continue
+            if pop_dur > 0:
+                anim_end = min(w1, w0 + pop_dur)
+                t = w0
+                while t < anim_end - 1e-5:
+                    step_end = min(anim_end, t + dt)
+                    mid_elapsed = round(((t + step_end) * 0.5) - w0, 4)
+                    events.append(((pi, wi, mid_elapsed), t, step_end))
+                    t = step_end
+                if w1 - anim_end > 1e-5:
+                    events.append(((pi, wi, None), anim_end, w1))
+            else:
+                events.append(((pi, wi, None), w0, w1))
+
     out, cur = [], 0.0
     for key, t0, t1 in events:
         t0 = max(t0, cur)
         t1 = min(t1, total)
-        if t1 - t0 < 0.5 / fps:
+        if t1 - t0 < 0.25 / fps and key is None:
             continue
         if t0 - cur > 1e-4:
             out.append((None, cur, t0))
@@ -183,7 +223,7 @@ def _layout(texts, font, st, canvas_w: int = W):
 
 
 def render_state(words: list[dict], active: int | None, style: dict | None = None,
-                 scale: float = 1.0) -> Image.Image:
+                 scale: float = 1.0, anim_t: float | None = None) -> Image.Image:
     """Render one transparent RGBA frame with all words of a phrase and `active` highlighted."""
     st = {**DEFAULT_STYLE, **(style or {})}
     canvas_w, canvas_h = int(round(W * scale)), int(round(H * scale))
@@ -207,7 +247,7 @@ def render_state(words: list[dict], active: int | None, style: dict | None = Non
     line_h = int((ascent + descent) * 1.08)
     block_h = line_h * len(lines)
     sw = int(st["stroke_width"])
-    margin = int(sw + st["shadow_blur"] * 3 + max(abs(st["shadow_dx"]), abs(st["shadow_dy"])) + st["pad_y"] + size * 0.3 + 24 * scale)
+    margin = int(sw + st["shadow_blur"] * 3 + max(abs(st["shadow_dx"]), abs(st["shadow_dy"])) + st["pad_y"] + size * 0.4 + 28 * scale)
 
     top = int(canvas_h * st["y_pos"] - block_h / 2)
     oy = max(0, min(canvas_h - (block_h + 2 * margin), top - margin))
@@ -220,6 +260,7 @@ def render_state(words: list[dict], active: int | None, style: dict | None = Non
     cap_h = -font.getbbox("H", anchor="ls")[1]
     is_pill = st["style"] == "pill"
     is_pop = st["style"] == "pop"
+    pop_dur = float(st.get("pop_duration", 0.14))
 
     for li, (line, line_w) in enumerate(lines):
         x0 = (canvas_w - line_w) / 2
@@ -231,16 +272,33 @@ def render_state(words: list[dict], active: int | None, style: dict | None = Non
             is_active = idx == active
             f, fill, bx, by = font, _rgb(st["text_color"]), x, baseline
             if is_active and is_pop:
-                f = get_font(st["font"], int(size * st["pop_scale"]))
+                rest_scale = float(st["pop_scale"])
+                peak_scale = max(rest_scale * 1.12, 1.14)
+                cur_scale = _pop_factor(anim_t, pop_dur, peak=peak_scale, rest=rest_scale, start=1.0)
+                f = get_font(st["font"], int(round(size * cur_scale)))
                 fill = _rgb(st["pop_color"])
                 wd2 = f.getlength(texts[idx])
                 bx = x - (wd2 - wd) / 2
-                by = baseline + cap_h * (st["pop_scale"] - 1) / 2
+                by = baseline
             if is_active and is_pill:
                 px, py = st["pad_x"], st["pad_y"]
                 bottom = baseline + py + (0 if st["uppercase"] else size * 0.2)
-                _pill(box_layer, (x - px, baseline - cap_h - py, x + wd + px, bottom), st,
-                      ss=2 if scale < 1 else 4)
+                box = (x - px, baseline - cap_h - py, x + wd + px, bottom)
+                pill_scale = _pop_factor(anim_t, pop_dur, peak=float(st["pop_scale"]),
+                                         rest=1.0, start=0.65)
+                pill_alpha = 1.0 if anim_t is None or pop_dur <= 0 else min(
+                    1.0, max(0.0, anim_t / (pop_dur * 0.45)))
+                cx = (box[0] + box[2]) / 2
+                cy = (box[1] + box[3]) / 2
+                scaled_box = (
+                    cx + (box[0] - cx) * pill_scale,
+                    cy + (box[1] - cy) * pill_scale,
+                    cx + (box[2] - cx) * pill_scale,
+                    cy + (box[3] - cy) * pill_scale,
+                )
+                _pill(box_layer, scaled_box, st,
+                      ss=2 if scale < 1 else 4,
+                      box_scale=pill_scale, alpha_mult=pill_alpha)
             swd = max(1, round(sw * (f.size / size)))
             td.text((bx, by), texts[idx], font=f, fill=fill, anchor="ls",
                     stroke_width=swd, stroke_fill=_rgb(st["stroke_color"]))
@@ -259,7 +317,8 @@ def render_state(words: list[dict], active: int | None, style: dict | None = Non
     return img
 
 
-def _pill(layer: Image.Image, box, st, ss: int = 4):
+def _pill(layer: Image.Image, box, st, ss: int = 4,
+          box_scale: float = 1.0, alpha_mult: float = 1.0):
     """Anti-aliased rounded rectangle via supersampling, composited onto `layer`."""
     x0, y0, x1, y1 = [int(round(v)) for v in box]
     pad = 2
@@ -267,12 +326,14 @@ def _pill(layer: Image.Image, box, st, ss: int = 4):
     big = Image.new("RGBA", (w * ss, h * ss), (0, 0, 0, 0))
     d = ImageDraw.Draw(big)
     rect = (pad * ss, pad * ss, (w - pad) * ss - 1, (h - pad) * ss - 1)
-    r = int(st["border_radius"] * ss)
+    r = int(st["border_radius"] * box_scale * ss)
+    alpha = int(round(255 * max(0.0, min(1.0, alpha_mult))))
     if st["box_fill"]:
-        d.rounded_rectangle(rect, radius=r, fill=_rgb(st["highlight_color"]))
+        d.rounded_rectangle(rect, radius=r, fill=_rgb(st["highlight_color"], alpha))
     if st["box_stroke"]:
-        d.rounded_rectangle(rect, radius=r, outline=_rgb(st["box_stroke_color"]),
-                            width=int(st["box_stroke_width"] * ss))
+        d.rounded_rectangle(rect, radius=r,
+                            outline=_rgb(st["box_stroke_color"], alpha),
+                            width=int(st["box_stroke_width"] * box_scale * ss))
     small = big.resize((w, h), Image.LANCZOS)
     dx, dy = x0 - pad, y0 - pad
     if dx < 0 or dy < 0:
@@ -292,8 +353,8 @@ def write_state_pngs(phrases, timeline, style, out_dir: Path):
             if key is None:
                 img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
             else:
-                pi, wi = key
-                img = render_state(phrases[pi]["words"], wi, style)
+                pi, wi, anim_t = key
+                img = render_state(phrases[pi]["words"], wi, style, anim_t=anim_t)
             img.save(p, compress_level=1)
             cache[key] = p
         segs.append((cache[key], t1 - t0))
