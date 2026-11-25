@@ -77,3 +77,6 @@ tmp/
 # ---------- Exceptions: demo media for the README can live in docs/ ----------
 !docs/
 !docs/**
+
+# ---------- Shortcuts ------------
+*.lnk

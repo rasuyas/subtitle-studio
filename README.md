@@ -120,6 +120,7 @@ ct2-transformers-converter --model your/finetune --output_dir models/my-model --
 
 | Problem | Fix |
 |---|---|
+| Windows Defender or antivirus flags `.bat` / `.vbs` files | This is a common false positive because the launcher scripts use PowerShell and `WScript.Shell` to create shortcuts and start the app silently without a console window. You can inspect the scripts in Notepad or use the **Manual start** commands above instead. |
 | `open() got an unexpected keyword argument 'metadata_errors'` | PyAV 19 is too new for faster-whisper. Run `pip install "av<19"` inside the venv. The requirements file already pins this. |
 | `ffmpeg` or `ffprobe` not found | Install FFmpeg and add it to your PATH, then restart the launcher. |
 | CUDA or cuDNN errors when transcribing | Check that your NVIDIA driver supports CUDA 12. The app falls back to CPU if CUDA cannot load. |
@@ -228,4 +229,4 @@ Only download or process videos you own or have permission to use. Respect YouTu
 
 ## License
 
-*Not chosen yet.* Add a `LICENSE` file before publishing. MIT is a common choice for personal tools like this.
+This project is licensed under the [MIT License](LICENSE).
