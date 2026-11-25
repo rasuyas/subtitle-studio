@@ -114,8 +114,16 @@ img { display: block; max-width: 100%; }
 .source-sidebar, .workspace, .settings-sidebar { min-width: 0; }
 .settings-sidebar { grid-column: 1 / -1; }
 .preview-pair { grid-template-columns: minmax(0, 1fr); }
-.preview-frame { min-height: clamp(8rem, 22vh, 14rem); }
-.output-stage { width: min(100%, 27vh, 20rem); aspect-ratio: 9 / 16; }
+.preview-frame {
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-inline: auto;
+  transition: width .12s ease, height .12s ease;
+}
+.preview-frame video { width: 100%; height: 100%; object-fit: contain; }
+.output-stage { width: min(100%, 27vh, 20rem); aspect-ratio: 9 / 16; transition: width .12s ease; }
 .scrub-value { min-width: 0; flex: 0 1 6rem; }
 .volume-slider { flex: 0 1 4rem; min-width: 2.5rem; }
 .transcript-grid { max-height: min(45vh, 28rem); }

@@ -303,6 +303,7 @@ function initJob(job) {
   vid.pause();
   vid.src = `/api/jobs/${job.job_id}/media`;
   vid.load();
+  schedulePreviewResize();
   setPlayLabels();
   invalidateOverlayCache();
   rechunk();
@@ -311,6 +312,7 @@ function initJob(job) {
 vid.addEventListener('loadedmetadata', () => {
   if (!S.job) return;
   if (S.t > 0 && Math.abs((vid.currentTime || 0) - S.t) > 0.05) vid.currentTime = S.t;
+  schedulePreviewResize();
   drawLayoutFrame();
 });
 vid.addEventListener('loadeddata', () => { drawLayoutFrame(); });
@@ -471,6 +473,48 @@ function setupBox(el, key) {
 }
 setupBox($('#boxMain'), 'main'); setupBox($('#boxFace'), 'face');
 
+let previewResizePending = false;
+function schedulePreviewResize() {
+  if (previewResizePending) return;
+  previewResizePending = true;
+  requestAnimationFrame(() => {
+    previewResizePending = false;
+    fitPreviewPanes();
+  });
+}
+
+function fitPreviewPanes() {
+  const cropPanel = $('#cropPanel');
+  const frame = $('#frameWrap');
+  const frameStyle = getComputedStyle(cropPanel);
+  const frameWidth = Math.max(0, cropPanel.clientWidth
+    - parseFloat(frameStyle.paddingLeft) - parseFloat(frameStyle.paddingRight));
+  const sourceWidth = (S.job && S.job.meta.width) || vid.videoWidth || 16;
+  const sourceHeight = (S.job && S.job.meta.height) || vid.videoHeight || 9;
+  const sourceAspect = sourceWidth / sourceHeight;
+  const frameHeight = Math.min(window.innerHeight * 0.42, 420);
+  const fittedFrameWidth = Math.min(frameWidth, frameHeight * sourceAspect);
+  if (fittedFrameWidth > 0) {
+    frame.style.width = `${fittedFrameWidth}px`;
+    frame.style.height = `${fittedFrameWidth / sourceAspect}px`;
+    frame.style.aspectRatio = `${sourceWidth} / ${sourceHeight}`;
+  }
+
+  const outputPanel = $('#outputPanel');
+  const outputStyle = getComputedStyle(outputPanel);
+  const outputWidth = Math.max(0, outputPanel.clientWidth
+    - parseFloat(outputStyle.paddingLeft) - parseFloat(outputStyle.paddingRight));
+  const outputHeight = Math.min(window.innerHeight * 0.27, 520);
+  const stageWidth = Math.min(outputWidth, 320, outputHeight * 9 / 16);
+  if (stageWidth > 0) $('#stage').style.width = `${stageWidth}px`;
+}
+
+const previewResizeObserver = new ResizeObserver(schedulePreviewResize);
+previewResizeObserver.observe($('#cropPanel'));
+previewResizeObserver.observe($('#outputPanel'));
+window.addEventListener('resize', schedulePreviewResize, { passive: true });
+schedulePreviewResize();
+
 function setLayout(l) {
   S.layout = l;
   $$('#layouts button').forEach(b => b.setAttribute('aria-pressed', b.dataset.l === l));
@@ -483,6 +527,7 @@ function updateReframeUI() {
   $('#cropHelp').classList.toggle('hidden', !S.reframe);
   if ($('#boxMain')) $('#boxMain').style.display = S.reframe ? '' : 'none';
   if ($('#boxFace')) $('#boxFace').style.display = S.reframe && ASPECT().face ? '' : 'none';
+  schedulePreviewResize();
 }
 function setReframe(enabled) {
   S.reframe = Boolean(enabled && S.job && S.job.kind === 'video');

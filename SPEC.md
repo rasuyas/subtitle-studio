@@ -7,6 +7,22 @@ Local, GPU-accelerated word-highlight subtitle and 9:16 layout desktop app.
 - **Web Server Mode (optional):** Run `launch.bat --web` (or `./launch.sh --web`) to run on `http://127.0.0.1:8000` in a browser.
 - **Requires:** Python 3.10+, `ffmpeg` + `ffprobe` on PATH, NVIDIA GPU with CUDA 12.x (falls back to CPU transcription / `libx264` if CUDA or NVENC is unavailable).
 
+## Default workflow and optional reframing
+
+The default workflow is Subtitle-Only: load video or audio, transcribe and style the
+subtitles, then render without changing the source video's framing. Crop Box / Reframe
+is an optional mode for video sources; enable it to adjust the main and facecam crop
+areas and choose an output layout. It is off by default, and audio-only sources do not
+offer crop controls. The export format remains selectable.
+
+## Responsive desktop preview
+
+The desktop UI adapts to the available screen and preview-pane dimensions. When the
+window or pane is resized, the source video, output/subtitle preview, and enabled crop
+boxes scale proportionally and remain centered. The preview panes reflow with the
+available layout when optional crop controls are enabled or hidden, without reserving
+space for hidden controls.
+
 ## Desktop updates
 
 The desktop app checks for updates in a background thread at startup. Use **Check for Updates** in the header to check manually; available updates can be downloaded and installed from the GitHub release ZIP, with the `main` branch `VERSION` as a fallback when the Releases API is unavailable. The updater uses only Python's standard library and targets the repository configured by `OWNER` and `REPO` in `app/updater.py` (`rasuyas/subtitle-studio`).
