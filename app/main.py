@@ -299,7 +299,9 @@ def chunk(body: dict = Body(...)):
 @app.post("/api/preview")
 def preview(body: dict = Body(...)):
     words = se.clean_words(body.get("words") or [])
-    img = se.render_state(words, body.get("active"), body.get("style"), scale=0.5)
+    anim_t = body.get("anim_t")
+    img = se.render_state(words, body.get("active"), body.get("style"), scale=0.5,
+                          anim_t=float(anim_t) if anim_t is not None else None)
     buf = io.BytesIO()
     img.save(buf, "PNG", compress_level=1)
     return Response(buf.getvalue(), media_type="image/png")
@@ -339,7 +341,7 @@ def render(job_id: str, body: dict = Body(...)):
         phrases = se.chunk_words(body["words"], c.get("max_words", 3), c.get("max_chars", 24), c.get("pause", 0.55))
         if not phrases:
             raise RuntimeError("No words to render. Run transcription first.")
-        timeline = se.build_timeline(phrases, dur, meta["fps"])
+        timeline = se.build_timeline(phrases, dur, meta["fps"], style=body.get("style"))
         frames = job.dir / "frames"
         shutil.rmtree(frames, ignore_errors=True)
         job.emit("render", 0.02, f"rendering {len(timeline)} subtitle states")
