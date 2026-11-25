@@ -23,6 +23,14 @@ boxes scale proportionally and remain centered. The preview panes reflow with th
 available layout when optional crop controls are enabled or hidden, without reserving
 space for hidden controls.
 
+## Subtitle typography
+
+The Text controls include **Line spacing**, a multiplier from 0.8x to 2.0x (default
+1.0x) for the vertical distance between wrapped subtitle rows. The setting is saved
+with the local style settings and is applied consistently to the live output preview
+and exported subtitle frames, including their vertical text-block and background-box
+layout.
+
 ## Desktop updates
 
 The desktop app checks for updates in a background thread at startup. Use **Check for Updates** in the header to check manually; available updates can be downloaded and installed from the GitHub release ZIP, with the `main` branch `VERSION` as a fallback when the Releases API is unavailable. The updater uses only Python's standard library and targets the repository configured by `OWNER` and `REPO` in `app/updater.py` (`rasuyas/subtitle-studio`).

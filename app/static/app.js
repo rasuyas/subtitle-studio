@@ -28,6 +28,7 @@ const SECTIONS = [
   { title: 'Text', show: () => true, controls: [
     { k: 'font', label: 'Font', t: 'select', searchable: true, opts: [] },
     { k: 'font_size', label: 'Size', t: 'range', min: 40, max: 140, step: 1 },
+    { k: 'line_spacing', label: 'Line spacing', t: 'range', min: .8, max: 2, step: .05, fmt: v => v.toFixed(2) + 'x' },
     { k: 'y_pos', label: 'Vertical position', t: 'range', min: .1, max: .9, step: .01, fmt: v => Math.round(v * 100) + '%' },
     { k: 'uppercase', label: 'All caps', t: 'check' },
     { k: 'text_color', label: 'Text color', t: 'color' },
@@ -1248,7 +1249,8 @@ window.addEventListener('pywebviewready', enableDesktopUI);
     localStorage.setItem('subgen.style', JSON.stringify(S.style));
     invalidateOverlayCache(['style', 'font', 'uppercase', 'box_fill', 'box_stroke',
       'pop_color', 'pop_scale', 'pop_duration', 'highlight_color', 'box_stroke',
-      'box_stroke_color', 'box_stroke_width', 'border_radius', 'pad_x', 'pad_y'].includes(k));
+      'box_stroke_color', 'box_stroke_width', 'border_radius', 'pad_x', 'pad_y',
+      'line_spacing'].includes(k));
   });
   const CHUNK = [{ title: '', show: () => true, controls: [
     { k: 'max_words', label: 'Words per line', t: 'range', min: 1, max: 5, step: 1 },

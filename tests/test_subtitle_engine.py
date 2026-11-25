@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from app.subtitle_engine import _layout
+from app.subtitle_engine import _layout, render_state
 
 
 class SubtitleLayoutTests(unittest.TestCase):
@@ -17,6 +18,27 @@ class SubtitleLayoutTests(unittest.TestCase):
 
         self.assertEqual(with_padding, without_padding)
         self.assertEqual(without_padding, [([(0, 0.0, 20), (1, 25.0, 20), (2, 50.0, 20)], 70.0)])
+
+    def test_line_spacing_changes_multi_line_text_block_height(self):
+        words = [{"w": "FIRST"}, {"w": "SECOND"}]
+
+        def render(spacing):
+            image = render_state(words, active=None, style={"line_spacing": spacing, "y_pos": 0.5})
+            return image.getchannel("A").getbbox()
+
+        def two_lines(texts, font, st, canvas_w):
+            return [
+                ([(i, 0, font.getlength(text))], font.getlength(text))
+                for i, text in enumerate(texts)
+            ]
+
+        with patch("app.subtitle_engine._layout", side_effect=two_lines):
+            compact = render(0.8)
+            expanded = render(2.0)
+
+        self.assertIsNotNone(compact)
+        self.assertIsNotNone(expanded)
+        self.assertGreater(expanded[3] - expanded[1], compact[3] - compact[1])
 
 
 if __name__ == "__main__":

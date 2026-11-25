@@ -19,6 +19,7 @@ DEFAULT_STYLE = {
     "style": "pill",            # pill | pop | popin
     "font": "Montserrat-ExtraBold",
     "font_size": 84,
+    "line_spacing": 1.0,
     "uppercase": True,
     "text_color": "#FFFFFF",
     "stroke_width": 6,
@@ -258,7 +259,8 @@ def render_state(words: list[dict], active: int | None, style: dict | None = Non
 
     lines = _layout(texts, font, st, canvas_w)
     ascent, descent = font.getmetrics()
-    line_h = int((ascent + descent) * 1.08)
+    line_spacing = max(0.8, min(2.0, float(st["line_spacing"])))
+    line_h = max(1, int(round((ascent + descent) * 1.08 * line_spacing)))
     block_h = line_h * len(lines)
     sw = int(st["stroke_width"])
     margin = int(sw + st["shadow_blur"] * 3 + max(abs(st["shadow_dx"]), abs(st["shadow_dy"])) + st["pad_y"] + size * 0.4 + 28 * scale)
