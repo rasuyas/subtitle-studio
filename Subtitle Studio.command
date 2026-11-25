@@ -18,4 +18,4 @@ fi
 command -v ffmpeg >/dev/null || { echo "ffmpeg not found on PATH"; read -r -p "Press Return to close..."; exit 1; }
 command -v ffprobe >/dev/null || { echo "ffprobe not found on PATH"; read -r -p "Press Return to close..."; exit 1; }
 
-exec python3 -m app.desktop
+exec python3 "Subtitle Studio.pyw"

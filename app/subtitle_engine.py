@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import functools
+import logging
 import os
 from pathlib import Path
 import sys
@@ -9,6 +10,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
+LOGGER = logging.getLogger(__name__)
 W, H = 1080, 1920
 PREFERRED = ["Montserrat-ExtraBold", "Poppins-ExtraBold", "Anton-Regular"]
 BREAK_CHARS = ".,?!;:…"
@@ -44,42 +46,54 @@ def _system_font_dirs() -> list[Path]:
     if sys.platform.startswith("linux"):
         return [Path("/usr/share/fonts"), Path("/usr/local/share/fonts"),
                 Path.home() / ".local" / "share" / "fonts"]
+    if sys.platform == "darwin":
+        return [
+            Path(os.path.expanduser("~/Library/Fonts")),
+            Path("/Library/Fonts"),
+            Path("/System/Library/Fonts"),
+        ]
     return []
 
 
 def _font_files(directory: Path) -> list[Path]:
     if not directory.is_dir():
         return []
+    files = []
+    for path in directory.rglob("*"):
+        if not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        if suffix in (".ttf", ".otf"):
+            files.append(path)
+        elif suffix in (".ttc", ".dfont"):
+            LOGGER.debug("Skipping unsupported font format: %s", path)
     return sorted(
-        (p for p in directory.rglob("*") if p.is_file() and p.suffix.lower() in (".ttf", ".otf")),
+        files,
         key=lambda p: (p.stem.casefold(), p.suffix.lower() != ".ttf", str(p).casefold()),
     )
 
 
 @functools.lru_cache(maxsize=1)
-def _font_catalog() -> tuple[dict[str, Path], set[str]]:
+def _font_catalog() -> dict[str, Path]:
     paths: dict[str, Path] = {}
-    custom_names = set()
     for path in _font_files(FONT_DIR):
         paths.setdefault(path.stem, path)
-        custom_names.add(path.stem)
     for directory in _system_font_dirs():
         for path in _font_files(directory):
             paths.setdefault(path.stem, path)
-    return paths, custom_names
+    return paths
 
 
 def list_fonts() -> list[str]:
-    paths, custom_names = _font_catalog()
+    paths = _font_catalog()
     preferred = [name for name in PREFERRED if name in paths]
-    custom = sorted(custom_names - set(preferred))
-    system = sorted(paths.keys() - custom_names - set(preferred))
-    return preferred + custom + system
+    remaining = sorted((name for name in paths if name not in preferred), key=str.casefold)
+    return preferred + remaining
 
 
 @functools.lru_cache(maxsize=64)
 def get_font(name: str, size: int) -> ImageFont.FreeTypeFont:
-    path = _font_catalog()[0].get(name)
+    path = _font_catalog().get(name)
     if path:
         f = ImageFont.truetype(str(path), size)
         try:  # variable fonts: pick the ExtraBold instance
