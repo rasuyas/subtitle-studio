@@ -75,11 +75,14 @@ def get_model(name: str):
         return _models[name]
     _setup_cuda_paths()
     from faster_whisper import WhisperModel
-    try:
-        m = WhisperModel(name, device="cuda", compute_type="float16")
-    except Exception as e:  # CUDA missing -> CPU fallback so the app still works
-        print(f"[whisper] CUDA init failed ({e}); falling back to CPU int8")
+    if sys.platform == "darwin":
         m = WhisperModel(name, device="cpu", compute_type="int8")
+    else:
+        try:
+            m = WhisperModel(name, device="cuda", compute_type="float16")
+        except Exception as e:  # CUDA missing -> CPU fallback so the app still works
+            print(f"[whisper] CUDA init failed ({e}); falling back to CPU int8")
+            m = WhisperModel(name, device="cpu", compute_type="int8")
     _models[name] = m
     return m
 
