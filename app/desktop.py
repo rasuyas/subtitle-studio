@@ -205,10 +205,11 @@ def main():
         from app.main import app
     except Exception as exc:
         logging.exception("Failed to import desktop dependencies")
+        setup_command = "launch.bat --setup" if sys.platform == "win32" else "bash ./launch.sh --setup"
         _show_error(
             "Subtitle Studio — Startup Error",
             f"Could not start Subtitle Studio:\n{exc}\n\n"
-            "Try running launch.bat --setup to reinstall dependencies.",
+            f"Try running {setup_command} to reinstall dependencies.",
         )
         sys.exit(1)
 
