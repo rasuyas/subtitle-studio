@@ -3,8 +3,8 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
-async function api(url, body, method = 'POST') {
-  const r = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+async function api(url, body, method = 'POST', signal) {
+  const r = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, signal });
   if (!r.ok) {
     let m = await r.text();
     try { m = JSON.parse(m).detail || m; } catch { /* plain text */ }
@@ -561,15 +561,24 @@ function updateBgToggle() {
 }
 $('#bgToggle').onclick = () => { S.showVideo = !S.showVideo; updateBgToggle(); };
 
-let ovlVer = 0, ovlInFlight = false, ovlDirty = false, ovlActiveKey = '';
+let ovlVer = 0, ovlController = null, ovlTargetKey = '', ovlActiveKey = '';
+let overlayRefreshTimer = null;
 const ovlCache = new Map();
 
-function invalidateOverlayCache() {
+function cancelOverlayRender() {
+  if (ovlController) ovlController.abort();
+  ovlController = null;
+  ovlTargetKey = '';
+}
+
+function invalidateOverlayCache(immediate = false) {
   ovlVer++;
+  cancelOverlayRender();
   ovlActiveKey = '';
   for (const url of ovlCache.values()) { if (url) URL.revokeObjectURL(url); }
   ovlCache.clear();
-  scheduleOverlay();
+  if (immediate) refreshLivePreview();
+  else scheduleOverlay();
 }
 
 function setOverlayBlob(url) {
@@ -581,15 +590,21 @@ function setOverlayBlob(url) {
   }
 }
 
-async function fetchOverlayState(pi, wi, ver) {
+function overlayStateKey(pi, wi, ver) {
+  const ph = S.phrases[pi];
+  const active = ph ? Math.max(0, Math.min(wi, ph.words.length - 1)) : Math.max(0, Math.min(S.selWord, SAMPLE.length - 1));
+  return `${ver}:${ph ? pi : 'sample'}:${active}`;
+}
+
+async function fetchOverlayState(pi, wi, ver, signal) {
   const ph = S.phrases[pi];
   const words = ph ? ph.words : SAMPLE;
   const active = ph ? Math.max(0, Math.min(wi, ph.words.length - 1)) : Math.max(0, Math.min(S.selWord, SAMPLE.length - 1));
-  const key = `${ver}:${ph ? pi : 'sample'}:${active}`;
+  const key = overlayStateKey(pi, wi, ver);
   if (ovlCache.has(key)) return { key, url: ovlCache.get(key) };
-  const blob = await (await api('/api/preview', { words, active, style: S.style })).blob();
+  const blob = await (await api('/api/preview', { words, active, style: S.style }, 'POST', signal)).blob();
   const url = URL.createObjectURL(blob);
-  if (ver !== ovlVer) { URL.revokeObjectURL(url); return null; }
+  if (signal.aborted || ver !== ovlVer) { URL.revokeObjectURL(url); return null; }
   if (ovlCache.size >= 150) {
     const oldest = ovlCache.keys().next().value;
     URL.revokeObjectURL(ovlCache.get(oldest));
@@ -599,7 +614,7 @@ async function fetchOverlayState(pi, wi, ver) {
   return { key, url };
 }
 
-function prefetchNextStates(pi, wi, ver) {
+function prefetchNextStates(pi, wi, ver, signal) {
   if (!S.phrases.length) return;
   let p = pi, w = wi;
   for (let step = 0; step < 4; step++) {
@@ -607,33 +622,52 @@ function prefetchNextStates(pi, wi, ver) {
     if (w >= S.phrases[p].words.length) { p++; w = 0; }
     if (p >= S.phrases.length) break;
     const key = `${ver}:${p}:${w}`;
-    if (!ovlCache.has(key)) fetchOverlayState(p, w, ver).catch(() => {});
+    if (!ovlCache.has(key)) fetchOverlayState(p, w, ver, signal).catch(() => {});
   }
 }
 
-async function runOverlayLoop() {
-  if (ovlInFlight) { ovlDirty = true; return; }
-  ovlInFlight = true;
+async function renderTargetState(pi, wi, playing = !vid.paused) {
+  const ver = ovlVer;
+  const key = overlayStateKey(pi, wi, ver);
+  if (ovlActiveKey === key || ovlTargetKey === key) return;
+  cancelOverlayRender();
+  const controller = new AbortController();
+  ovlController = controller;
+  ovlTargetKey = key;
+  let succeeded = false;
   try {
-    do {
-      ovlDirty = false;
-      const ver = ovlVer;
-      const pi = S.phrases.length ? Math.min(S.selPhrase, S.phrases.length - 1) : -1;
-      const wi = S.phrases.length && pi >= 0 ? Math.min(S.selWord, S.phrases[pi].words.length - 1) : S.selWord;
-      const res = await fetchOverlayState(pi, wi, ver);
-      if (res && ver === ovlVer && !ovlDirty) {
-        ovlActiveKey = res.key;
-        setOverlayBlob(res.url);
-      }
-    } while (ovlDirty);
+    const res = await fetchOverlayState(pi, wi, ver, controller.signal);
+    if (!res || controller.signal.aborted || ver !== ovlVer) return;
+    ovlActiveKey = res.key;
+    setOverlayBlob(res.url);
+    succeeded = true;
+    if (S.phrases[pi] && playing) prefetchNextStates(pi, wi, ver, controller.signal);
   } catch (e) {
-    setStatus('render', 0, e.message, 'error');
-  } finally {
-    ovlInFlight = false;
+    if (e.name !== 'AbortError') setStatus('render', 0, e.message, 'error');
+  }
+  if (!succeeded && ovlController === controller) {
+    ovlController = null;
+    ovlTargetKey = '';
   }
 }
 
-function scheduleOverlay() { runOverlayLoop(); }
+function refreshLivePreview(pi, wi, playing) {
+  if (overlayRefreshTimer !== null) clearTimeout(overlayRefreshTimer);
+  overlayRefreshTimer = null;
+  if (pi === undefined) {
+    pi = S.phrases.length ? Math.min(S.selPhrase, S.phrases.length - 1) : -1;
+    wi = S.phrases.length && pi >= 0 ? Math.min(S.selWord, S.phrases[pi].words.length - 1) : S.selWord;
+  }
+  renderTargetState(pi, wi, playing);
+}
+
+function scheduleOverlay() {
+  if (overlayRefreshTimer !== null) clearTimeout(overlayRefreshTimer);
+  overlayRefreshTimer = setTimeout(() => {
+    overlayRefreshTimer = null;
+    refreshLivePreview();
+  }, 35);
+}
 
 function findTimelineState(t) {
   for (let pi = 0; pi < S.phrases.length; pi++) {
@@ -670,17 +704,17 @@ function updateActiveTranscriptMarks(pi, wi) {
 function syncSubtitleToTime(t, playing) {
   if (!S.phrases.length) {
     updateActiveTranscriptMarks(-1, -1);
+    cancelOverlayRender();
+    ovlActiveKey = '';
+    setOverlayBlob(null);
     return;
   }
   const hit = findTimelineState(t);
   if (!hit) {
     updateActiveTranscriptMarks(-1, -1);
-    if (playing) {
-      ovlActiveKey = '';
-      setOverlayBlob(null);
-    } else {
-      scheduleOverlay();
-    }
+    cancelOverlayRender();
+    ovlActiveKey = '';
+    setOverlayBlob(null);
     return;
   }
 
@@ -690,21 +724,7 @@ function syncSubtitleToTime(t, playing) {
 
   const key = `${ovlVer}:${hit.pi}:${hit.wi}`;
   if (ovlActiveKey === key) return;
-  if (ovlCache.has(key)) {
-    ovlActiveKey = key;
-    setOverlayBlob(ovlCache.get(key));
-    if (playing) prefetchNextStates(hit.pi, hit.wi, ovlVer);
-    return;
-  }
-  const ver = ovlVer;
-  fetchOverlayState(hit.pi, hit.wi, ver).then(res => {
-    if (!res || ver !== ovlVer) return;
-    if (S.selPhrase === hit.pi && S.selWord === hit.wi) {
-      ovlActiveKey = res.key;
-      setOverlayBlob(res.url);
-    }
-    if (playing) prefetchNextStates(hit.pi, hit.wi, ver);
-  }).catch(() => {});
+  refreshLivePreview(hit.pi, hit.wi, playing);
 }
 
 /* ------------------------------------------------------------------ chunking + transcript grid */
@@ -835,7 +855,7 @@ window.addEventListener('pywebviewready', enableDesktopUI);
   buildControls($('#styleControls'), SECTIONS, S.style, k => {
     if (k === 'style') refreshSectionVisibility();
     localStorage.setItem('subgen.style', JSON.stringify(S.style));
-    invalidateOverlayCache();
+    invalidateOverlayCache(['style', 'font', 'uppercase', 'box_fill', 'box_stroke'].includes(k));
   });
   const CHUNK = [{ title: '', show: () => true, controls: [
     { k: 'max_words', label: 'Words per line', t: 'range', min: 1, max: 5, step: 1 },
