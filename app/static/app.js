@@ -847,6 +847,8 @@ window.addEventListener('pywebviewready', enableDesktopUI);
 /* ------------------------------------------------------------------ boot */
 (async function boot() {
   loadModels();
+  const health = await (await api('/api/health', null, 'GET')).json();
+  $('#appVersion').textContent = 'v' + health.version;
   const meta = await (await api('/api/fonts', null, 'GET')).json();
   let saved = {}; try { saved = JSON.parse(localStorage.getItem('subgen.style') || '{}'); } catch { /* ignore */ }
   S.style = { ...meta.default_style, ...saved };
