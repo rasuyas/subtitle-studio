@@ -16,6 +16,12 @@
   </div>
   <div class="app-header-actions flex items-center gap-3">
     <div id="updateArea" class="flex items-center gap-2 hidden">
+      <label class="flex items-center gap-1 text-xs text-mute">Update channel
+        <select id="updateChannel" class="field !py-1 !px-1">
+          <option value="Stable">Stable</option>
+          <option value="Nightly">Nightly</option>
+        </select>
+      </label>
       <span id="updateStatus" class="update-status text-xs text-mute" role="status" aria-live="polite">Checking for updates...</span>
       <button id="updateBtn" class="btn !py-1 !px-2 text-xs" type="button">Check for Updates</button>
     </div>

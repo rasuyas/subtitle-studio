@@ -1,6 +1,8 @@
 import sys
 import threading
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -28,6 +30,18 @@ class DesktopWindowGeometryTests(unittest.TestCase):
 
 
 class DesktopUpdaterStatusTests(unittest.TestCase):
+    def test_update_channel_defaults_to_stable_and_persists(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self.assertEqual(desktop._read_update_channel(root), "Stable")
+            self.assertEqual(desktop._write_update_channel("Nightly", root), "Nightly")
+            self.assertEqual(desktop._read_update_channel(root), "Nightly")
+
+    def test_update_channel_rejects_unknown_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(ValueError):
+                desktop._write_update_channel("Preview", Path(temp_dir))
+
     def test_current_version_clears_available_state_and_resets_message(self):
         api = desktop.DesktopApi.__new__(desktop.DesktopApi)
         api._update_lock = threading.Lock()

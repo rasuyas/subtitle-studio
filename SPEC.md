@@ -33,9 +33,16 @@ layout.
 
 ## Desktop updates
 
-The desktop app checks for updates in a background thread at startup. Use **Check for Updates** in the header to check manually; available updates can be downloaded and installed from the GitHub release ZIP, with the `main` branch `VERSION` as a fallback when the Releases API is unavailable. The updater uses only Python's standard library and targets the repository configured by `OWNER` and `REPO` in `app/updater.py` (`rasuyas/subtitle-studio`).
+The desktop app checks for updates in a background thread at startup. Use **Check for Updates** in the header to check manually, or choose the **Stable** or **Nightly** update channel. Stable checks compare semantic versions from the latest stable release, with the `main` branch `VERSION` as a fallback when the Releases API is unavailable. Nightly checks compare the rolling `nightly` release commit with the locally installed `.nightly_sha`. The channel preference is saved in `user_settings/update.json`. The updater uses only Python's standard library and targets the repository configured by `OWNER` and `REPO` in `app/updater.py` (`rasuyas/subtitle-studio`).
 
 The updater preserves local fonts, settings, models, virtual environments, exports, and workspace data. It installs changed Python requirements before asking to restart the app.
+
+## Release & Auto-Update Workflow
+
+Bumping `VERSION` on `main` triggers a GitHub Actions workflow that creates the
+matching version tag and stable GitHub Release automatically. Every push to `main`
+also replaces the rolling `nightly` tag and creates a Nightly pre-release. The
+desktop updater offers both the **Stable** and **Nightly** release channels.
 
 ## Known issues
 

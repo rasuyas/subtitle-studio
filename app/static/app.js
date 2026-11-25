@@ -1165,6 +1165,7 @@ function enableDesktopUI() {
 function initUpdaterUI(d) {
   const area = $('#updateArea');
   const button = $('#updateBtn');
+  const channelSelect = $('#updateChannel');
   const statusText = $('#updateStatus');
   area.classList.remove('hidden');
   if (button.dataset.bound) return;
@@ -1190,6 +1191,33 @@ function initUpdaterUI(d) {
       statusText.classList.add('is-error');
     }
   }
+
+  let selectedChannel = channelSelect.value;
+  channelSelect.disabled = true;
+  channelSelect.onchange = async () => {
+    channelSelect.disabled = true;
+    try {
+      await d.set_update_channel(channelSelect.value);
+      selectedChannel = channelSelect.value;
+      await refresh();
+    } catch (error) {
+      channelSelect.value = selectedChannel;
+      statusText.textContent = `Could not change update channel: ${error.message}`;
+      statusText.classList.add('is-error');
+    } finally {
+      channelSelect.disabled = false;
+    }
+  };
+
+  d.get_update_channel().then(channel => {
+    channelSelect.value = channel;
+    selectedChannel = channel;
+  }).catch(error => {
+    statusText.textContent = `Update channel unavailable: ${error.message}`;
+    statusText.classList.add('is-error');
+  }).finally(() => {
+    channelSelect.disabled = false;
+  });
 
   button.onclick = async () => {
     try {

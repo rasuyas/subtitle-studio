@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import logging
 import os
 import shutil
@@ -21,6 +22,38 @@ EXPORTS = ROOT / "exports"
 STATIC = Path(__file__).resolve().parent / "static"
 ICON_ICO = STATIC / "icon.ico"
 ICON_PNG = STATIC / "icon.png"
+UPDATE_CHANNELS = {"Stable", "Nightly"}
+
+
+def _read_update_settings(root: Path = ROOT) -> dict:
+    path = root / "user_settings" / "update.json"
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Could not read update settings: {exc}") from exc
+    if not isinstance(settings, dict):
+        raise RuntimeError("Update settings must contain a JSON object.")
+    return settings
+
+
+def _read_update_channel(root: Path = ROOT) -> str:
+    channel = _read_update_settings(root).get("update_channel", "Stable")
+    if not isinstance(channel, str) or channel not in UPDATE_CHANNELS:
+        raise RuntimeError(f"Invalid saved update channel: {channel!r}")
+    return channel
+
+
+def _write_update_channel(channel: str, root: Path = ROOT) -> str:
+    if not isinstance(channel, str) or channel not in UPDATE_CHANNELS:
+        raise ValueError(f"Invalid update channel: {channel!r}")
+    settings = _read_update_settings(root)
+    settings["update_channel"] = channel
+    path = root / "user_settings" / "update.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    return channel
 
 
 def _setup_logging():
@@ -126,10 +159,13 @@ class DesktopApi:
     def __init__(self):
         self._window = None
         self._update_lock = threading.Lock()
+        self._update_check_generation = 0
         self._update_status = {
             "state": "checking",
+            "channel": "Stable",
             "current_version": "",
             "latest_version": "",
+            "nightly_sha": None,
             "update_available": False,
             "message": "Checking for updates...",
             "archive_url": None,
@@ -150,27 +186,53 @@ class DesktopApi:
         self._start_update_check()
         return self.get_update_status()
 
+    def get_update_channel(self) -> str:
+        return _read_update_channel()
+
+    def set_update_channel(self, channel: str) -> str:
+        saved_channel = _write_update_channel(channel)
+        self._start_update_check()
+        return saved_channel
+
     def _start_update_check(self):
         with self._update_lock:
+            self._update_check_generation += 1
+            generation = self._update_check_generation
             self._update_status.update(
                 state="checking",
                 message="Checking for updates...",
                 update_available=False,
                 archive_url=None,
+                nightly_sha=None,
             )
-        threading.Thread(target=self._check_update_worker, name="update-check", daemon=True).start()
+        threading.Thread(
+            target=self._check_update_worker,
+            args=(generation,),
+            name="update-check",
+            daemon=True,
+        ).start()
 
-    def _check_update_worker(self):
+    def _check_update_worker(self, generation: int | None = None):
         try:
-            result = updater.check_for_updates(ROOT, timeout=4.0)
+            channel = _read_update_channel()
+            result = updater.check_for_updates(ROOT, timeout=4.0, channel=channel)
             available = result["update_available"]
             state = "available" if available else "current"
-            message = (
-                f"Version {result['latest_version']} is available."
-                if available
-                else f"Up to date (v{result['current_version']})"
-            )
+            if channel == "Nightly":
+                message = (
+                    f"Nightly update ({result['nightly_sha'][:7]}) is available."
+                    if available
+                    else f"Up to date with Nightly ({result['nightly_sha'][:7]})."
+                )
+            else:
+                message = (
+                    f"Version {result['latest_version']} is available."
+                    if available
+                    else f"Up to date (v{result['current_version']})"
+                )
             with self._update_lock:
+                if generation is not None and generation != self._update_check_generation:
+                    return
                 self._update_status.update(
                     result,
                     state=state,
@@ -181,6 +243,8 @@ class DesktopApi:
         except Exception as exc:
             logging.warning("Update check failed: %s", exc)
             with self._update_lock:
+                if generation is not None and generation != self._update_check_generation:
+                    return
                 self._update_status.update(state="error", message=str(exc), archive_url=None)
 
     def stage_update(self) -> bool:
@@ -188,23 +252,29 @@ class DesktopApi:
             if self._update_status["state"] != "available" or not self._update_status.get("archive_url"):
                 raise RuntimeError("There is no available update to install.")
             archive_url = self._update_status["archive_url"]
+            nightly_sha = self._update_status.get("nightly_sha")
             self._update_status.update(state="downloading", message="Downloading update...")
         threading.Thread(
             target=self._stage_update_worker,
-            args=(archive_url,),
+            args=(archive_url, nightly_sha),
             name="update-install",
             daemon=True,
         ).start()
         return True
 
-    def _stage_update_worker(self, archive_url: str):
+    def _stage_update_worker(self, archive_url: str, nightly_sha: str | None = None):
         def set_message(message):
             state = "applying" if message.startswith("Applying") else "downloading"
             with self._update_lock:
                 self._update_status.update(state=state, message=message)
 
         try:
-            requirements_changed = updater.download_and_apply(ROOT, archive_url, set_message)
+            requirements_changed = updater.download_and_apply(
+                ROOT,
+                archive_url,
+                set_message,
+                nightly_sha=nightly_sha,
+            )
             if requirements_changed:
                 with self._update_lock:
                     self._update_status.update(state="installing", message="Installing updated requirements...")
