@@ -8,13 +8,13 @@
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="bg-ink text-fg min-h-screen">
-<header class="flex items-center justify-between px-5 py-3 border-b border-line">
+<header class="app-header flex items-center justify-between px-5 py-3 border-b border-line">
   <div class="flex items-center gap-3">
-    <img src="/static/icon.png" alt="" style="width:22px;height:22px;border-radius:5px">
+    <img class="app-icon" src="/static/icon.png" alt="">
     <h1 class="text-[15px] font-semibold">Subtitle Studio</h1>
     <span id="appVersion" class="text-xs text-mute"></span>
   </div>
-  <div class="flex items-center gap-3">
+  <div class="app-header-actions flex items-center gap-3">
     <div id="updateArea" class="flex items-center gap-2 hidden">
       <span id="updateStatus" class="update-status text-xs text-mute" role="status" aria-live="polite">Checking for updates...</span>
       <button id="updateBtn" class="btn !py-1 !px-2 text-xs" type="button">Check for Updates</button>
@@ -24,9 +24,9 @@
   </div>
 </header>
 
-<main class="grid gap-4 p-4 lg:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)_350px]">
+<main class="app-layout grid gap-4 p-4">
   <!-- LEFT -->
-  <section class="flex flex-col gap-4">
+  <section class="source-sidebar flex flex-col gap-4">
     <div class="panel">
       <h2>Source</h2>
       <div class="seg grid-cols-2 mb-3" id="srcTabs">
@@ -56,14 +56,14 @@
 
     <div class="panel">
       <h2>Transcription</h2>
-      <div class="row" style="grid-template-columns:80px 1fr"><span>Model</span>
+      <div class="row two-col"><span>Model</span>
         <select id="model" class="field"><option>small</option><option>medium</option><option>large-v3</option><option selected>large-v3-turbo</option></select></div>
       <div id="modelOtherRow" class="hidden flex gap-2 mb-2">
         <input id="modelOther" class="field flex-1" placeholder="Folder path or Hugging Face repo id" aria-label="Custom model folder or repo">
         <button id="modelBrowse" class="btn !py-1 !px-2 text-xs hidden" type="button">Browse</button>
       </div>
       <p id="modelHint" class="hidden text-xs text-mute mb-2">Needs a CTranslate2 (faster-whisper) model. Folders placed in the models folder appear in the list after a page reload.</p>
-      <div class="row" style="grid-template-columns:80px 1fr"><span>Language</span>
+      <div class="row two-col"><span>Language</span>
         <select id="lang" class="field"><option value="auto">Auto-detect</option><option value="id">Indonesian</option><option value="en">English</option></select></div>
       <button id="go" class="btn btn-primary w-full mt-2" disabled>Transcribe</button>
     </div>
@@ -76,15 +76,15 @@
   </section>
 
   <!-- CENTER -->
-  <section class="flex flex-col gap-4 min-w-0">
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+  <section class="workspace flex flex-col gap-4 min-w-0">
+    <div class="preview-pair grid gap-4">
       <div class="panel" id="cropPanel">
         <div class="flex items-center justify-between mb-2">
           <h2 class="!mb-0">Video preview</h2>
           <label class="flex items-center gap-2 text-xs text-mute"><input type="checkbox" id="reframeToggle" disabled> Crop Box / Reframe</label>
         </div>
         <p id="cropHelp" class="hidden text-xs text-mute mb-2"><b class="text-face">Facecam</b> and <b class="text-main">main</b> boxes keep the aspect of their output area.</p>
-        <div id="frameWrap" class="relative w-full bg-black rounded overflow-hidden select-none" style="min-height:180px">
+        <div id="frameWrap" class="preview-frame relative w-full bg-black rounded overflow-hidden select-none">
           <video id="srcVideo" class="block w-full" playsinline preload="auto"></video>
           <div class="box main" id="boxMain"><span class="tag">Main</span><i class="h" data-c="nw"></i><i class="h" data-c="ne"></i><i class="h" data-c="sw"></i><i class="h" data-c="se"></i></div>
           <div class="box face" id="boxFace"><span class="tag">Facecam</span><i class="h" data-c="nw"></i><i class="h" data-c="ne"></i><i class="h" data-c="sw"></i><i class="h" data-c="se"></i></div>
@@ -95,9 +95,9 @@
           <button id="skipBack" class="btn !py-1 !px-2 text-xs" type="button" disabled title="Back 2s">-2s</button>
           <button id="skipFwd" class="btn !py-1 !px-2 text-xs" type="button" disabled title="Forward 2s">+2s</button>
           <input type="range" id="scrub" class="flex-1" min="0" max="1" step="any" value="0" disabled aria-label="Playback position">
-          <span id="scrubVal" class="text-right text-fg tnum" style="min-width:92px">0:00.0 / 0:00.0</span>
+          <span id="scrubVal" class="scrub-value text-right text-fg tnum">0:00.0 / 0:00.0</span>
           <button id="muteBtn" class="btn !py-1 !px-2 text-xs" type="button" disabled title="Mute / Unmute">🔊</button>
-          <input type="range" id="vol" min="0" max="1" step="0.05" value="1" style="width:58px" disabled aria-label="Volume">
+          <input type="range" id="vol" class="volume-slider" min="0" max="1" step="0.05" value="1" disabled aria-label="Volume">
         </div>
       </div>
 
@@ -109,7 +109,7 @@
             <button class="btn !py-1 !px-2 text-xs" id="playBtn" type="button">Play</button>
           </div>
         </div>
-        <div id="stage" class="relative mx-auto checker rounded overflow-hidden" style="width:270px;aspect-ratio:9/16">
+        <div id="stage" class="output-stage relative mx-auto checker rounded overflow-hidden">
           <canvas id="layCanvas" width="540" height="960" class="absolute inset-0 w-full h-full hidden"></canvas>
           <img id="ovl" class="absolute inset-0 w-full h-full" alt="" style="pointer-events:none">
         </div>
@@ -122,12 +122,12 @@
         <h2 class="!mb-0">Transcript</h2>
         <span id="gridInfo" class="text-xs text-mute">No transcript yet</span>
       </div>
-      <div id="grid" class="flex flex-col gap-2 max-h-[420px] overflow-auto pr-1"></div>
+      <div id="grid" class="transcript-grid flex flex-col gap-2 overflow-auto pr-1"></div>
     </div>
   </section>
 
   <!-- RIGHT -->
-  <section class="flex flex-col gap-4 lg:col-span-2 2xl:col-span-1 2xl:row-auto">
+  <section class="settings-sidebar flex flex-col gap-4">
     <div class="panel hidden" id="framingPanel">
       <h2>Layout</h2>
       <div class="seg grid-cols-2" id="layouts">

@@ -90,6 +90,36 @@ def _safe_export(filename: str) -> Path | None:
     return target
 
 
+def _initial_window_geometry() -> dict[str, object]:
+    root = None
+    try:
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+    except Exception as exc:
+        logging.warning("Could not detect display resolution for initial window size: %s", exc)
+        return {}
+    finally:
+        if root is not None:
+            try:
+                root.destroy()
+            except Exception as exc:
+                logging.warning("Could not close display-resolution probe: %s", exc)
+
+    width = int(screen_width * 0.84)
+    height = int(screen_height * 0.84)
+    min_width = min(width, max(640, int(screen_width * 0.65)))
+    min_height = min(height, max(480, int(screen_height * 0.65)))
+    return {
+        "width": width,
+        "height": height,
+        "min_size": (min_width, min_height),
+    }
+
+
 class DesktopApi:
     """Native desktop actions exposed to the UI via window.pywebview.api."""
 
@@ -346,15 +376,14 @@ def main():
         _show_error("Subtitle Studio — Server Error", f"Failed to start local engine:\n{exc}")
         sys.exit(1)
 
+    window_options = _initial_window_geometry()
     window = webview.create_window(
         "Subtitle Studio",
         url=f"http://127.0.0.1:{port}/",
         js_api=api,
-        width=1440,
-        height=920,
-        min_size=(1024, 680),
         background_color="#0f1114",
         text_select=True,
+        **window_options,
     )
     api.attach(window)
 
