@@ -168,13 +168,15 @@ class DesktopApi:
             message = (
                 f"Version {result['latest_version']} is available."
                 if available
-                else f"You're up to date (v{result['current_version']})."
+                else f"Up to date (v{result['current_version']})"
             )
             with self._update_lock:
                 self._update_status.update(
                     result,
                     state=state,
                     message=message,
+                    update_available=available,
+                    archive_url=result["archive_url"] if available else None,
                 )
         except Exception as exc:
             logging.warning("Update check failed: %s", exc)
@@ -220,6 +222,8 @@ class DesktopApi:
                 self._update_status.update(
                     state="staged",
                     message="Update staged. Restart Subtitle Studio to finish.",
+                    update_available=False,
+                    archive_url=None,
                 )
         except Exception as exc:
             logging.exception("Failed to stage update")

@@ -505,8 +505,12 @@ function fitPreviewPanes() {
   const outputWidth = Math.max(0, outputPanel.clientWidth
     - parseFloat(outputStyle.paddingLeft) - parseFloat(outputStyle.paddingRight));
   const outputHeight = Math.min(window.innerHeight * 0.27, 520);
-  const stageWidth = Math.min(outputWidth, 320, outputHeight * 9 / 16);
-  if (stageWidth > 0) $('#stage').style.width = `${stageWidth}px`;
+  const stageAspect = S.reframe || !S.job || S.job.kind !== 'video' ? 9 / 16 : sourceAspect;
+  const stage = $('#stage');
+  stage.style.aspectRatio = `${stageAspect}`;
+  $('#ovl').style.objectFit = S.reframe ? 'fill' : 'contain';
+  const stageWidth = Math.min(outputWidth, 320, outputHeight * stageAspect);
+  if (stageWidth > 0) stage.style.width = `${stageWidth}px`;
 }
 
 const previewResizeObserver = new ResizeObserver(schedulePreviewResize);
@@ -612,12 +616,22 @@ function roundRectPath(ctx, x, y, w, h, r) {
 }
 
 function drawLayoutFrame() {
-  const show = Boolean(S.reframe && S.job && S.job.kind === 'video' && S.showVideo);
+  const show = Boolean(S.job && S.job.kind === 'video' && S.showVideo);
   layCanvas.classList.toggle('hidden', !show);
   if (!show || vid.readyState < 2 || !vid.videoWidth) return;
 
-  const CW = 540, CH = 960;
+  const CW = 540;
+  const CH = S.reframe ? 960 : Math.max(1, Math.round(CW * vid.videoHeight / vid.videoWidth));
+  if (layCanvas.width !== CW || layCanvas.height !== CH) {
+    layCanvas.width = CW;
+    layCanvas.height = CH;
+  }
   layCtx.clearRect(0, 0, CW, CH);
+
+  if (!S.reframe) {
+    layCtx.drawImage(vid, 0, 0, CW, CH);
+    return;
+  }
 
   if (S.layout === 'split50' || S.layout === 'split35') {
     const topH = S.layout === 'split50' ? 480 : 336;

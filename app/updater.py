@@ -26,9 +26,13 @@ PRESERVED_PATHS = {
 }
 
 
+def _strip_version_prefix(value: str) -> str:
+    return value.strip().lstrip("vV")
+
+
 def parse_version(value: str) -> tuple[int, int, int]:
     """Parse a semantic version, accepting an optional leading v and suffix."""
-    version = value.strip().lstrip("vV").split("+", 1)[0].split("-", 1)[0]
+    version = _strip_version_prefix(value).split("+", 1)[0].split("-", 1)[0]
     parts = version.split(".")
     if len(parts) != 3 or any(not part.isdigit() for part in parts):
         raise ValueError(f"Invalid semantic version: {value!r}")
@@ -45,7 +49,7 @@ def _read_url(url: str, timeout: float, accept: str = "text/plain") -> bytes:
 
 
 def check_for_updates(root: Path, timeout: float = 4.0) -> dict:
-    current = (root / "VERSION").read_text(encoding="utf-8").strip()
+    current = _strip_version_prefix((root / "VERSION").read_text(encoding="utf-8").strip())
     current_tuple = parse_version(current)
     deadline = time.monotonic() + timeout
     api_error = None
@@ -91,7 +95,7 @@ def check_for_updates(root: Path, timeout: float = 4.0) -> dict:
 
     return {
         "current_version": current,
-        "latest_version": latest.lstrip("vV"),
+        "latest_version": _strip_version_prefix(latest),
         "update_available": parse_version(latest) > current_tuple,
         "archive_url": archive_url,
         "source": source,
@@ -106,12 +110,24 @@ def _is_preserved(relative: PurePosixPath) -> bool:
     return filename.startswith(("settings.", "presets.", "user-settings.", "user-presets."))
 
 
-def _safe_archive_path(name: str, archive_root: str) -> PurePosixPath | None:
+def _archive_root(file_names: list[str]) -> str | None:
+    paths = [PurePosixPath(name.rstrip("/")) for name in file_names]
+    if not paths or not paths[0].parts:
+        return None
+    candidate = paths[0].parts[0]
+    if all(len(path.parts) > 1 and path.parts[0] == candidate for path in paths):
+        return candidate
+    return None
+
+
+def _safe_archive_path(name: str, archive_root: str | None) -> PurePosixPath | None:
     if "\\" in name or name.startswith("/"):
         raise ValueError("Update archive contains an unsafe path.")
     path = PurePosixPath(name.rstrip("/"))
     if not path.parts or any(part in ("", ".", "..") or ":" in part for part in path.parts):
         raise ValueError("Update archive contains an unsafe path.")
+    if archive_root is None:
+        return path
     if path.parts[0] != archive_root or len(path.parts) == 1:
         return None
     return PurePosixPath(*path.parts[1:])
@@ -135,7 +151,7 @@ def apply_archive(archive_path: Path, root: Path) -> bool:
             file_names = [info.filename for info in archive.infolist() if not info.is_dir()]
             if not file_names:
                 raise ValueError("Update archive contains no files.")
-            archive_root = PurePosixPath(file_names[0]).parts[0]
+            archive_root = _archive_root(file_names)
             for info in archive.infolist():
                 if info.is_dir():
                     continue

@@ -18,10 +18,12 @@ class UpdaterTests(unittest.TestCase):
     def test_release_check_and_raw_version_fallback(self, read_url):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            (root / "VERSION").write_text("0.3.0", encoding="utf-8")
+            (root / "VERSION").write_text(" v0.3.0 \n", encoding="utf-8")
             read_url.return_value = b'{"tag_name":"v0.3.2","zipball_url":"https://github.com/repo/release.zip"}'
             release = check_for_updates(root)
             self.assertTrue(release["update_available"])
+            self.assertEqual(release["current_version"], "0.3.0")
+            self.assertEqual(release["latest_version"], "0.3.2")
             self.assertEqual(release["archive_url"], "https://github.com/repo/release.zip")
             self.assertEqual(read_url.call_args.args[0], API_URL)
 
@@ -70,6 +72,21 @@ class UpdaterTests(unittest.TestCase):
             self.assertEqual((root / "settings.json").read_text(encoding="utf-8"), "local settings")
             self.assertEqual((root / "presets" / "custom.json").read_text(encoding="utf-8"), "local preset")
             self.assertEqual((root / ".webview" / "profile").read_text(encoding="utf-8"), "browser data")
+
+    def test_archive_without_wrapper_installs_version_at_app_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "app"
+            root.mkdir()
+            (root / "VERSION").write_text("0.3.0", encoding="utf-8")
+            archive_path = Path(temp_dir) / "flat-update.zip"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("VERSION", "v0.3.1\n")
+                archive.writestr("app/main.py", "updated")
+
+            self.assertFalse(apply_archive(archive_path, root))
+            self.assertEqual((root / "VERSION").read_text(encoding="utf-8"), "v0.3.1\n")
+            self.assertFalse((root / "app" / "VERSION").exists())
+            self.assertEqual((root / "app" / "main.py").read_text(encoding="utf-8"), "updated")
 
     def test_archive_rejects_traversal_paths(self):
         with tempfile.TemporaryDirectory() as temp_dir:

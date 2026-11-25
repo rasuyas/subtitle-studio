@@ -1,4 +1,5 @@
 import sys
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -24,6 +25,48 @@ class DesktopWindowGeometryTests(unittest.TestCase):
                 self.assertEqual(geometry["height"], int(screen_height * 0.84))
                 self.assertLessEqual(geometry["min_size"][0], geometry["width"])
                 self.assertLessEqual(geometry["min_size"][1], geometry["height"])
+
+
+class DesktopUpdaterStatusTests(unittest.TestCase):
+    def test_current_version_clears_available_state_and_resets_message(self):
+        api = desktop.DesktopApi.__new__(desktop.DesktopApi)
+        api._update_lock = threading.Lock()
+        api._update_status = {
+            "state": "checking",
+            "update_available": True,
+            "archive_url": "https://example.com/update.zip",
+        }
+        result = {
+            "current_version": "0.3.1",
+            "latest_version": "0.3.1",
+            "update_available": False,
+            "archive_url": "https://example.com/update.zip",
+            "source": "release",
+        }
+        with patch("app.desktop.updater.check_for_updates", return_value=result):
+            api._check_update_worker()
+
+        status = api.get_update_status()
+        self.assertEqual(status["state"], "current")
+        self.assertFalse(status["update_available"])
+        self.assertIsNone(status["archive_url"])
+        self.assertEqual(status["message"], "Up to date (v0.3.1)")
+
+    def test_staged_update_clears_available_flag_and_archive_url(self):
+        api = desktop.DesktopApi.__new__(desktop.DesktopApi)
+        api._update_lock = threading.Lock()
+        api._update_status = {
+            "state": "available",
+            "update_available": True,
+            "archive_url": "https://example.com/update.zip",
+        }
+        with patch("app.desktop.updater.download_and_apply", return_value=False):
+            api._stage_update_worker("https://example.com/update.zip")
+
+        status = api.get_update_status()
+        self.assertEqual(status["state"], "staged")
+        self.assertFalse(status["update_available"])
+        self.assertIsNone(status["archive_url"])
 
 
 if __name__ == "__main__":
