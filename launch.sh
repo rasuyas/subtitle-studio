@@ -29,7 +29,11 @@ command -v ffmpeg >/dev/null || { echo "ffmpeg not found on PATH"; exit 1; }
 command -v ffprobe >/dev/null || { echo "ffprobe not found on PATH"; exit 1; }
 
 if [ "$MODE" = "web" ]; then
-  (sleep 3; xdg-open http://127.0.0.1:8000 >/dev/null 2>&1 || true) &
+  if command -v xdg-open >/dev/null; then
+    (sleep 3; xdg-open http://127.0.0.1:8000 >/dev/null 2>&1 || true) &
+  elif command -v open >/dev/null; then
+    (sleep 3; open http://127.0.0.1:8000 >/dev/null 2>&1 || true) &
+  fi
   exec python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 fi
 

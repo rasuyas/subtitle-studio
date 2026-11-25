@@ -9,5 +9,5 @@ Pillow>=10.3
 yt-dlp>=2025.1.1
 numpy
 # CUDA 12 runtime libs for ctranslate2 (skip if you already have CUDA 12 + cuDNN 9 installed system-wide)
-nvidia-cublas-cu12
-nvidia-cudnn-cu12==9.*
+nvidia-cublas-cu12 ; sys_platform != "darwin"
+nvidia-cudnn-cu12==9.* ; sys_platform != "darwin"

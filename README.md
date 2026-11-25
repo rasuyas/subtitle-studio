@@ -63,10 +63,10 @@ Layouts are presets plus manual crop boxes. Automatic face detection is not impl
 
 ## Requirements
 
-- **Windows or Linux**
+- **Windows, macOS or Linux**
 - **Python 3.10 or newer**
 - **FFmpeg and FFprobe** installed and available on your PATH
-- **NVIDIA GPU with CUDA 12.x** for fast transcription. Without CUDA it falls back to CPU, which is much slower.
+- **NVIDIA GPU with CUDA 12.x** for fast transcription on Windows/Linux. macOS uses CPU int8; without CUDA on other platforms it also falls back to CPU, which is much slower.
 - Internet access on first run, to download the Whisper model and the fonts
 
 ---
@@ -80,15 +80,17 @@ cd sub-generator
 
 You can run Subtitle Studio either as a **Desktop App** (native window via `pywebview`) or **Web-based** (in your default browser). On first run, the launchers automatically create a virtual environment and install the requirements. The first transcription also downloads the Whisper model, so it takes longer.
 
-### Desktop App (Windows)
+### Desktop App
 
-- **Standard launch:** double-click `Subtitle Studio.bat` (or `Subtitle Studio.pyw` / `Subtitle Studio.vbs` to launch without a console window).
-- **Desktop & Start Menu shortcuts:** double-click `Create Desktop Shortcut.bat` to generate shortcuts on your Desktop and Start Menu.
+- **Windows:** double-click `Subtitle Studio.bat` (or `Subtitle Studio.pyw` / `Subtitle Studio.vbs` to launch without a console window).
+- **macOS:** install FFmpeg and FFprobe, then double-click `Subtitle Studio.command`. If macOS blocks it, allow it in Privacy & Security or launch it with `"./Subtitle Studio.command"` from Terminal.
+- **Linux:** run `bash ./launch.sh`.
+- **Windows shortcuts:** double-click `Create Desktop Shortcut.bat` to generate shortcuts on your Desktop and Start Menu.
 
 ### Web-based (Browser)
 
-- **Windows:** double-click `launch.bat`
-- **Linux:** run `./launch.sh`
+- **Windows:** run `launch.bat --web`
+- **macOS or Linux:** run `bash ./launch.sh --web`
 
 This starts the local server and opens `http://127.0.0.1:8000` in your web browser.
 
@@ -98,7 +100,8 @@ If you prefer running things manually:
 
 ```bash
 python -m venv venv
-# Windows: venv\Scripts\activate    Linux: source venv/bin/activate
+# Windows: venv\Scripts\activate
+# macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
 
 # Desktop app:

@@ -152,15 +152,21 @@ def export_mp4(src: Path, list_path: Path, out: Path, meta: dict, layout_args: d
           f"[base][sub]overlay=0:0:format=auto:eof_action=pass,format=yuv420p[v]")
     common = ["-i", str(src), "-f", "concat", "-safe", "0", "-i", str(list_path), "-filter_complex", fc,
               "-map", "[v]", "-map", "0:a?", "-c:a", "aac", "-b:a", "192k", "-t", f"{dur:.3f}", "-movflags", "+faststart"]
-    nvenc = ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "20", "-b:v", "0", "-pix_fmt", "yuv420p"]
+    if sys.platform == "darwin":
+        preferred_encoder = "h264_videotoolbox"
+        preferred_args = ["-c:v", preferred_encoder, "-b:v", "8M", "-pix_fmt", "yuv420p"]
+    else:
+        preferred_encoder = "h264_nvenc"
+        preferred_args = ["-c:v", preferred_encoder, "-preset", "p4", "-rc", "vbr", "-cq", "20",
+                          "-b:v", "0", "-pix_fmt", "yuv420p"]
     x264 = ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p"]
-    encoder = "h264_nvenc"
+    encoder = preferred_encoder
     try:
-        run_ffmpeg(common + nvenc + [str(out)], dur, on_progress)
+        run_ffmpeg(common + preferred_args + [str(out)], dur, on_progress)
     except RuntimeError:
         encoder = "libx264"
         if on_progress:
-            on_progress(0.0, "NVENC unavailable, falling back to libx264")
+            on_progress(0.0, f"{preferred_encoder} unavailable, falling back to libx264")
         run_ffmpeg(common + x264 + [str(out)], dur, on_progress)
     return {"encoder": encoder, "duration": dur}
 
