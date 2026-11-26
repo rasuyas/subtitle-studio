@@ -58,6 +58,16 @@ def ensure_fonts():
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    # Load existing projects from workspace into JOBS
+    if WORK.is_dir():
+        for path in WORK.iterdir():
+            if not path.is_dir():
+                continue
+            job = Job.load(path)
+            if job is not None:
+                JOBS[job.id] = job
+        logging.info("Loaded %d existing jobs from workspace.", len(JOBS))
+
     cleanup_workspace(WORK)
     threading.Thread(target=ensure_fonts, daemon=True).start()
     try:
@@ -87,6 +97,48 @@ class Job:
     def emit(self, stage: str, pct: float = 0.0, msg: str = "", state: str = "running", **extra):
         self.events.append({"stage": stage, "pct": round(pct, 4), "msg": msg, "state": state, **extra})
 
+    def save(self):
+        """Persist job state to project.json in the job directory."""
+        data = {
+            "id": self.id,
+            "name": self.name,
+            "meta": self.meta,
+            "words": self.words,
+            "src": str(self.src) if self.src else None,
+            "settings": getattr(self, "settings", {}),
+        }
+        project_file = self.dir / "project.json"
+        with open(project_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+    @classmethod
+    def load(cls, path: Path) -> "Job | None":
+            """Load job from project.json; returns None if invalid or missing."""
+            project_file = path / "project.json"
+            if not project_file.is_file():
+                return None
+            try:
+                with open(project_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                job = cls(data.get("name", "untitled"))
+                job.id = data["id"]
+                job.dir = path
+                job.meta = data.get("meta", {})
+                job.words = data.get("words", [])
+                job.settings = data.get("settings", {})
+                src_path = data.get("src")
+                if src_path:
+                    job.src = Path(src_path)
+                    if not job.src.is_file():
+                        # Fallback: look for source file inside job dir
+                        for item in path.iterdir():
+                            if item.stem == "source":
+                                job.src = item
+                                break
+                return job
+            except Exception:
+                return None
+
     def set_source(self, path: Path, audio_only: bool = False):
         self.src = path
         self.meta = vr.probe(path)
@@ -96,7 +148,8 @@ class Job:
 
     def public(self) -> dict:
         return {"job_id": self.id, "name": self.name, "meta": self.meta, "words": self.words,
-                "kind": "video" if self.meta.get("has_video") else "audio"}
+                "kind": "video" if self.meta.get("has_video") else "audio",
+                "settings": getattr(self, "settings", {})}
 
 
 JOBS: dict[str, Job] = {}
@@ -200,6 +253,7 @@ async def upload(file: UploadFile = File(...)):
         raise HTTPException(400, f"Could not read media: {e}")
     JOBS[job.id] = job
     job.emit("upload", 1, "ready", state="done")
+    job.save()
     return job.public()
 
 
@@ -221,6 +275,7 @@ def open_local(body: dict = Body(...)):
         raise HTTPException(400, f"Could not read media: {e}")
     JOBS[job.id] = job
     job.emit("upload", 1, "ready", state="done")
+    job.save()
     return job.public()
 
 
@@ -260,8 +315,68 @@ def transcribe(job_id: str, body: dict = Body(...)):
         job.words = words
         job.emit("transcribe", 1, f"{len(words)} words ({info['language']})", state="done",
                  result={"words": words, "language": info["language"]})
+        job.save()
 
     run_task(job, "transcribe", task)
+    return {"ok": True}
+
+
+@app.get("/api/jobs")
+def list_jobs():
+    return [
+        {
+            "job_id": job.id,
+            "name": job.name,
+            "meta": job.meta,
+            "word_count": len(job.words),
+            "dir": str(job.dir),
+        }
+        for job in JOBS.values()
+    ]
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job_data(job_id: str):
+    return get_job(job_id).public()
+
+
+@app.post("/api/jobs/{job_id}/settings")
+def update_job_settings(job_id: str, settings: dict = Body(...)):
+    job = get_job(job_id)
+    job.settings = settings
+    if "words" in settings:
+        job.words = settings["words"]
+    job.save()
+    return {"ok": True}
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str):
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job = JOBS.pop(job_id)
+    if job.dir.exists():
+        import shutil
+        shutil.rmtree(job.dir)
+    return {"ok": True}
+
+
+@app.get("/api/settings/cleanup")
+def get_cleanup_settings():
+    path = Path("user_settings/cleanup.json")
+    if path.exists():
+        with open(path, "r") as f:
+            return json.load(f)
+    return {"max_age_days": 3}
+
+
+@app.post("/api/settings/cleanup")
+def set_cleanup_settings(data: dict = Body(...)):
+    path = Path("user_settings/cleanup.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f)
     return {"ok": True}
 
 

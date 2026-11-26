@@ -1,6 +1,7 @@
 """Safe cleanup for abandoned per-job workspace directories."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import re
@@ -10,7 +11,20 @@ from collections.abc import Iterable
 
 
 _JOB_DIR = re.compile(r"[0-9a-f]{10}\Z")
-DEFAULT_MAX_AGE_SECONDS = 24 * 60 * 60
+_DEFAULT_CLEANUP_PATH = Path("user_settings/cleanup.json")
+
+
+def _load_cleanup_max_age_days() -> int:
+    """Read cleanup max age from user settings, fallback to 3 days."""
+    try:
+        with open(_DEFAULT_CLEANUP_PATH, "r") as f:
+            return int(json.load(f).get("max_age_days", 3))
+    except (FileNotFoundError, ValueError, TypeError):
+        return 3
+
+
+def _default_max_age_seconds() -> float:
+    return _load_cleanup_max_age_days() * 24 * 60 * 60
 
 
 def _last_modified(path: Path) -> float:
@@ -30,10 +44,12 @@ def _last_modified(path: Path) -> float:
 def cleanup_workspace(
     workspace: Path,
     active_job_ids: Iterable[str] = (),
-    max_age_seconds: float = DEFAULT_MAX_AGE_SECONDS,
+    max_age_seconds: float | None = None,
     now: float | None = None,
 ) -> list[Path]:
     """Remove only stale, inactive per-job directories; preserve workspace user data."""
+    if max_age_seconds is None:
+        max_age_seconds = _default_max_age_seconds()
     if max_age_seconds < 0:
         raise ValueError("Workspace cleanup age must not be negative.")
     if not workspace.is_dir():

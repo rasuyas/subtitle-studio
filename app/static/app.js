@@ -12,6 +12,20 @@ async function api(url, body, method = 'POST', signal) {
   }
   return r;
 }
+let settingsSaveQueue = Promise.resolve();
+function saveJobSettings(jobId) {
+  const settings = JSON.parse(JSON.stringify({
+    layout: S.layout, pip: S.pip, blur: S.blur, reframe: S.reframe, mode: S.mode,
+    showVideo: S.showVideo, chunk: S.chunk, style: S.style, main: S.main, face: S.face, highlight: S.highlight,
+    words: S.words,
+  }));
+  const save = settingsSaveQueue.then(() => api(`/api/jobs/${jobId}/settings`, settings, 'POST'));
+  settingsSaveQueue = save.catch(e => {
+    console.error('saveJobSettings', e);
+    setStatus('upload', 0, `Could not save project changes: ${e.message}`, 'error');
+  });
+  return save.then(() => true, () => false);
+}
 
 const SAMPLE = ['Highlight', 'every', 'word'].map((w, i) => ({ w, start: i, end: i + 1 }));
 const S = {
@@ -261,6 +275,10 @@ function setStatus(stage, pct, msg, state = 'running') {
   $('#stMsg').style.color = state === 'error' ? '#ff8a8a' : '';
 }
 
+function updateRenderButton(busy = false) {
+  $('#render').disabled = busy || !S.job || !S.words.length;
+}
+
 function track(jobId) {
   if (es && es.jobId === jobId) return;
   if (es) es.close();
@@ -273,11 +291,16 @@ function onEvent(ev) {
   if (ev.stage === 'upload') return;
   setStatus(ev.stage, ev.pct, ev.msg, ev.state);
   const busy = ev.state === 'running';
-  $('#go').disabled = busy || !S.job; $('#render').disabled = busy || !S.words.length;
-  if (ev.state === 'error') { $('#go').disabled = !S.job; $('#render').disabled = !S.words.length; return; }
+  $('#go').disabled = busy || !S.job;
+  updateRenderButton(busy);
+  if (ev.state === 'error') { $('#go').disabled = !S.job; updateRenderButton(); return; }
   if (ev.state !== 'done') return;
   if (ev.stage === 'download') initJob(ev.result);
-  if (ev.stage === 'transcribe') { S.words = ev.result.words; rechunk().then(() => { $('#render').disabled = !S.words.length; }); }
+  if (ev.stage === 'transcribe') {
+    S.words = ev.result.words;
+    rechunk().then(() => updateRenderButton());
+    if (S.job) saveJobSettings(S.job.job_id);
+  }
   if (ev.stage === 'render') showResult(ev.result);
 }
 
@@ -303,7 +326,7 @@ function showResult(r) {
   } else {
     el.innerHTML = `<a class="underline text-fg" href="${r.url}" download>${r.file}</a><div class="text-mute mt-1">${detail}</div><div class="text-mute">Saved in the exports folder.</div>`;
   }
-  $('#render').disabled = false;
+  updateRenderButton();
 }
 
 /* ------------------------------------------------------------------ job init + media playback */
@@ -407,6 +430,7 @@ function togglePlay() {
 function initJob(job) {
   stopSampleLoop();
   S.job = job; S.words = job.words || [];
+  updateRenderButton();
   S.reframe = false;
   $('#reframeToggle').checked = false;
   $('#reframeToggle').disabled = job.kind !== 'video';
@@ -528,13 +552,14 @@ $('#ytGo').onclick = async () => {
 };
 
 $('#go').onclick = async () => {
-  try {
-    const model = $('#model').value === '__other__' ? $('#modelOther').value.trim() : $('#model').value;
-    if (!model) { setStatus('transcribe', 0, 'Enter a model folder or repo id first.', 'error'); return; }
-    await api(`/api/jobs/${S.job.job_id}/transcribe`, { model, language: $('#lang').value });
-    $('#go').disabled = true; setStatus('transcribe', 0, 'starting');
-  } catch (e) { setStatus('transcribe', 0, e.message, 'error'); }
-};
+    try {
+      if (S.job) await saveJobSettings(S.job.job_id); // Auto-save before transcribing
+      const model = $('#model').value === '__other__' ? $('#modelOther').value.trim() : $('#model').value;
+      if (!model) { setStatus('transcribe', 0, 'Enter a model folder or repo id first.', 'error'); return; }
+      await api(`/api/jobs/${S.job.job_id}/transcribe`, { model, language: $('#lang').value });
+      $('#go').disabled = true; setStatus('transcribe', 0, 'starting');
+    } catch (e) { setStatus('transcribe', 0, e.message, 'error'); }
+  };
 
 /* ------------------------------------------------------------------ layouts + crop boxes */
 const ASPECT = () => ({
@@ -1005,11 +1030,18 @@ function syncSubtitleToTime(t, playing) {
 
 /* ------------------------------------------------------------------ chunking + transcript grid */
 async function rechunk() {
-  if (!S.words.length) { S.phrases = []; renderGrid(); invalidateOverlayCache(); return; }
+  if (!S.words.length) {
+    S.phrases = [];
+    renderGrid();
+    invalidateOverlayCache();
+    updateRenderButton();
+    return;
+  }
   try {
     S.phrases = (await (await api('/api/chunk', { words: S.words, chunk: S.chunk })).json()).phrases;
     S.selPhrase = Math.min(S.selPhrase, S.phrases.length - 1);
     renderGrid();
+    updateRenderButton();
     ovlVer++;
     ovlActiveKey = '';
     for (const url of ovlCache.values()) { if (url) URL.revokeObjectURL(url); }
@@ -1121,6 +1153,7 @@ async function applyTranscriptMatches(matches, replacement) {
     words: S.words, matches, replacement,
   })).json();
   S.words = payload.words;
+  if (S.job) await saveJobSettings(S.job.job_id);
 }
 
 async function replaceSelectedTranscriptMatch() {
@@ -1178,12 +1211,14 @@ function renderGrid() {
           tw.size = Math.max(4, txt.length);
           invalidateOverlayCache();
           refreshTranscriptSearch();
+          if (S.job) saveJobSettings(S.job.job_id);
         }
       };
       tw.onchange = () => {
         S.words[w.i].w = w.w = tw.value.trim();
-        if (!w.w) delWord(w.i);
-        else { tw.size = Math.max(4, w.w.length); invalidateOverlayCache(); refreshTranscriptSearch(); }
+        if (!w.w) { delWord(w.i); return; }
+        tw.size = Math.max(4, w.w.length); invalidateOverlayCache(); refreshTranscriptSearch();
+        if (S.job) saveJobSettings(S.job.job_id);
       };
       const timeChange = () => {
         const s0 = parseFloat(ts.value), s1 = parseFloat(te.value);
@@ -1192,6 +1227,7 @@ function renderGrid() {
         const sorted = S.words.every((x, k) => !k || x.start >= S.words[k - 1].start);
         if (!sorted) { S.words.sort((a, b) => a.start - b.start); rechunk(); }
         else if (S.job) { syncSubtitleToTime(vid.currentTime || S.t, !vid.paused); }
+        if (S.job) saveJobSettings(S.job.job_id);
       };
       ts.oninput = timeChange; te.oninput = timeChange;
       $('button', c).onclick = () => delWord(w.i);
@@ -1201,7 +1237,12 @@ function renderGrid() {
   });
   refreshTranscriptSearch();
 }
-function delWord(i) { S.words.splice(i, 1); rechunk(); }
+function delWord(i) {
+  S.words.splice(i, 1);
+  rechunk();
+  if (S.job) saveJobSettings(S.job.job_id);
+  updateRenderButton();
+}
 
 $('#transcriptFind').addEventListener('input', () => refreshTranscriptSearch(true));
 $('#transcriptCase').addEventListener('change', () => refreshTranscriptSearch(true));
@@ -1236,6 +1277,7 @@ $('#fixScript').onclick = async () => {
       reference: $('#referenceScript').value,
     })).json();
     S.words = result.words;
+    if (S.job) await saveJobSettings(S.job.job_id);
     await rechunk();
     status.textContent = `Fixed ${result.fixed} words from script`;
   } catch (e) {
@@ -1255,15 +1297,20 @@ function setMode(m) {
 $$('#modes button').forEach(b => b.onclick = () => setMode(b.dataset.m));
 
 $('#render').onclick = async () => {
-  try {
-    $('#result').classList.add('hidden'); $('#render').disabled = true;
-    S.words.sort((a, b) => a.start - b.start);
-    await api(`/api/jobs/${S.job.job_id}/render`, {
-      mode: S.mode, words: S.words, chunk: S.chunk, style: S.style, layout: S.layout,
-      reframe: S.reframe, main_crop: S.main, face_crop: S.face, pip_corner: S.pip, blur_bg: S.blur });
-    track(S.job.job_id); setStatus('render', 0, 'starting render');
-  } catch (e) { setStatus('render', 0, e.message, 'error'); $('#render').disabled = false; }
-};
+    if (!S.job || !S.words.length) {
+      updateRenderButton();
+      return;
+    }
+    try {
+      await saveJobSettings(S.job.job_id); // Auto-save before rendering
+      $('#result').classList.add('hidden'); $('#render').disabled = true;
+      S.words.sort((a, b) => a.start - b.start);
+      await api(`/api/jobs/${S.job.job_id}/render`, {
+        mode: S.mode, words: S.words, chunk: S.chunk, style: S.style, layout: S.layout,
+        reframe: S.reframe, main_crop: S.main, face_crop: S.face, pip_corner: S.pip, blur_bg: S.blur });
+      track(S.job.job_id); setStatus('render', 0, 'starting render');
+    } catch (e) { setStatus('render', 0, e.message, 'error'); updateRenderButton(); }
+  };
 
 /* ------------------------------------------------------------------ custom models */
 async function loadModels() {
@@ -1393,11 +1440,156 @@ window.addEventListener('pywebviewready', enableDesktopUI);
       'pop_color', 'pop_scale', 'pop_duration', 'highlight_color', 'box_stroke',
       'box_stroke_color', 'box_stroke_width', 'border_radius', 'pad_x', 'pad_y',
       'line_spacing'].includes(k));
+    if (S.job) saveJobSettings(S.job.job_id);
   });
   const CHUNK = [{ title: '', show: () => true, controls: [
     { k: 'max_words', label: 'Words per line', t: 'range', min: 1, max: 5, step: 1 },
     { k: 'max_chars', label: 'Max characters', t: 'range', min: 8, max: 40, step: 1 },
     { k: 'pause', label: 'Break on pause', t: 'range', min: .2, max: 1.5, step: .05, fmt: v => v.toFixed(2) + 's' }] }];
-  buildControls($('#chunkControls'), CHUNK, S.chunk, scheduleChunk);
+  buildControls($('#chunkControls'), CHUNK, S.chunk, () => {
+    scheduleChunk();
+    if (S.job) saveJobSettings(S.job.job_id);
+  });
   setLayout('split50'); updateBgToggle(); scheduleOverlay(); enableDesktopUI();
+
+  $('#openJobsBtn').onclick = async () => {
+    $('#jobsModal').classList.remove('hidden');
+    $('#jobsList').innerHTML = '<div class="text-xs text-mute p-4 text-center">Loading...</div>';
+    try {
+      // Load cleanup settings
+      const settingsRes = await api('/api/settings/cleanup', null, 'GET');
+      const settings = await settingsRes.json();
+      $('#cleanupDays').value = settings.max_age_days || 3;
+
+      const res = await api('/api/jobs', null, 'GET');
+      const jobs = await res.json();
+      if (!jobs.length) {
+        $('#jobsList').innerHTML = '<div class="text-xs text-mute p-4 text-center">No saved jobs found</div>';
+        return;
+      }
+      $('#jobsList').innerHTML = jobs.map(j => `
+        <div class="job-item">
+          <div class="info" onclick="loadSavedJob('${j.job_id}')">
+            <div class="name">${j.name}</div>
+            <div class="meta">${(j.meta.duration || 0).toFixed(1)}s · ${j.word_count || 0} words</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-danger text-xs !p-1" onclick="deleteJob(event, '${j.job_id}', '${j.name.replace(/'/g, "\\'")}')">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      $('#jobsList').innerHTML = '<div class="text-xs text-error p-4 text-center">Failed to load jobs</div>';
+    }
+  };
+
+  const saveBtn = $('#saveProjectBtn');
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      if (!S.job) return;
+      saveBtn.textContent = 'Saving...';
+      const success = await saveJobSettings(S.job.job_id);
+      saveBtn.textContent = 'Save';
+      if (success) {
+        const origText = saveBtn.innerHTML;
+        saveBtn.textContent = 'Saved!';
+        setTimeout(() => { saveBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M11 2H9v3h2V2z"/><path d="M1.5 0h11.586a1 1 0 0 1 .707.293l1.414 1.414a1 1 0 0 1 .293.707V14a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V1a1 1 0 0 1 1-1zM2 1v13h12V3.05L12.95 2H2z"/><path d="M7 14h2v-3H7v3zM5 14h4v-4H5v4z"/></svg> Save'; }, 1500);
+      } else {
+        alert('Failed to save project.');
+      }
+    };
+  }
+
+  // Bind to existing initJob logic
+  const _origInit = window.initJob;
+  window.initJob = (job) => {
+    if (typeof _origInit === 'function') _origInit(job);
+    else initJob(job);
+    if (saveBtn) saveBtn.classList.remove('hidden');
+  };
+
+  $('#saveCleanupBtn').onclick = async () => {
+    const days = parseInt($('#cleanupDays').value);
+    await api('/api/settings/cleanup', { max_age_days: days }, 'POST');
+    alert('Cleanup settings saved.');
+  };
+
+  $('#closeJobsBtn').onclick = () => $('#jobsModal').classList.add('hidden');
+
+  window.deleteJob = async (e, id, name) => {
+    e.stopPropagation();
+    if (!confirm(`Delete project "${name}"?`)) return;
+    if (!confirm(`Are you sure? This will permanently delete the folder and all its data.`)) return;
+    
+    try {
+      await api(`/api/jobs/${id}`, null, 'DELETE');
+      $('#openJobsBtn').click(); // Refresh list
+    } catch (e) {
+      alert('Failed to delete job.');
+    }
+  };
+  window.getJobSettings = () => ({ layout: S.layout, pip: S.pip, blur: S.blur, reframe: S.reframe, mode: S.mode, showVideo: S.showVideo, chunk: S.chunk, style: S.style, main: S.main, face: S.face });
+  window.setJobSettings = (s) => {
+    S.layout = s.layout || S.layout; S.pip = s.pip || S.pip; S.blur = s.blur ?? S.blur;
+    S.reframe = s.reframe ?? S.reframe; S.mode = s.mode || S.mode; S.showVideo = s.showVideo ?? S.showVideo;
+    if (s.chunk) Object.assign(S.chunk, s.chunk);
+    if (s.style) Object.assign(S.style, s.style);
+    if (s.main) Object.assign(S.main, s.main);
+    if (s.face) Object.assign(S.face, s.face);
+  };
+  window.loadSavedJob = async (id) => {
+    $('#jobsModal').classList.add('hidden');
+    try {
+      const res = await api(`/api/jobs/${id}`, null, 'GET');
+      if (!res.ok) throw new Error('Failed to fetch job data');
+      const job = await res.json();
+      if (S.job && S.job.job_id !== id) {
+        if (vid) vid.pause();
+        $('#grid').innerHTML = '';
+        S.words = [];
+      }
+      // initJob resets reframe/layout/mode defaults, so apply saved settings AFTER it
+      initJob(job);
+      window.setJobSettings(job.settings || {});
+      applyLoadedSettings();
+      // Rebuild controls to reflect loaded settings (in-place merged by setJobSettings)
+      buildControls($('#styleControls'), SECTIONS, S.style, k => {
+        if (k === 'style') refreshSectionVisibility();
+        localStorage.setItem('subgen.style', JSON.stringify(S.style));
+        invalidateOverlayCache(['style', 'font', 'uppercase', 'box_fill', 'box_stroke',
+          'pop_color', 'pop_scale', 'pop_duration', 'highlight_color', 'box_stroke',
+          'box_stroke_color', 'box_stroke_width', 'border_radius', 'pad_x', 'pad_y',
+          'line_spacing'].includes(k));
+        if (S.job) saveJobSettings(S.job.job_id);
+      });
+      buildControls($('#chunkControls'), CHUNK, S.chunk, () => {
+        scheduleChunk();
+        if (S.job) saveJobSettings(S.job.job_id);
+      });
+      if (job.words && job.words.length > 0) scheduleChunk();
+      return job;
+    } catch (e) {
+      console.error(e);
+      alert('Could not open project.');
+    }
+  };
+
+  function applyLoadedSettings() {
+    if (!S.job) return;
+    const isVideo = S.job.kind === 'video';
+    $('#reframeToggle').checked = !!S.reframe;
+    $('#reframeToggle').disabled = !isVideo;
+    updateReframeUI();
+    setLayout(S.layout || 'split50');
+    if (S.mode) setMode(S.mode);
+    updateBgToggle();
+    drawLayoutFrame();
+    scheduleOverlay();
+    refreshSectionVisibility();
+  }
+  window.addEventListener('beforeunload', async (e) => {
+    if (S.job) {
+      try { await saveJobSettings(S.job.job_id); } catch (_) { /* best-effort */ }
+    }
+  });
 })();

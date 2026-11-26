@@ -164,6 +164,18 @@ img { display: block; max-width: 100%; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn-primary { background: #E50914; border-color: #E50914; font-weight: 600; color: #fff; }
 .btn-primary:hover:not(:disabled) { background: #f01a25; border-color: #f01a25; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+.modal-overlay.hidden { display: none; }
+.modal-content { max-height: 90vh; max-width: 500px; width: 100%; overflow: hidden; display: flex; flex-direction: column; background: #161a20; border: 1px solid #2a2f38; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+.job-item { padding: 10px; border-radius: 6px; border: 1px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.job-item:hover { background: rgba(255,255,255,0.05); border-color: #2a2f38; }
+.job-item .info { flex: 1; min-width: 0; }
+.job-item .name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-item .meta { font-size: 11px; opacity: 0.6; }
+.job-item .actions { display: flex; gap: 4px; }
+.btn-danger { background: transparent; color: #ff4d4f; border: 1px solid transparent; padding: 4px 8px; }
+.btn-danger:hover { background: rgba(255,77,79,0.1); border-color: #ff4d4f; }
 .seg { display: grid; gap: 6px; }
 .seg button { background: #0f1114; border: 1px solid #2a2f38; border-radius: 6px; padding: 7px 6px; font-size: 12px; color: #8d94a0; cursor: pointer; text-align: center; }
 .seg button[aria-pressed="true"] { border-color: #E50914; color: #fff; background: #2a1215; }
