@@ -26,7 +26,7 @@ from .script_alignment import fix_words_from_script
 from .transcript_editing import replace_transcript_matches
 from . import video_renderer as vr
 from .transcriber import MODELS_DIR, list_custom_models
-from .workspace_cleanup import cleanup_workspace
+from .workspace_cleanup import CLEANUP_SETTINGS_PATH, cleanup_workspace
 
 _SUBPROC_KW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
@@ -58,7 +58,17 @@ def ensure_fonts():
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    cleanup_workspace(WORK)
+    # Load existing projects from workspace into JOBS
+    if WORK.is_dir():
+        for path in WORK.iterdir():
+            if not path.is_dir():
+                continue
+            job = Job.load(path)
+            if job is not None:
+                JOBS[job.id] = job
+        logging.info("Loaded %d existing jobs from workspace.", len(JOBS))
+
+    cleanup_workspace(WORK, active_job_ids=JOBS)
     threading.Thread(target=ensure_fonts, daemon=True).start()
     try:
         yield
@@ -72,12 +82,21 @@ app = FastAPI(title="Subtitle Studio", lifespan=_lifespan)
 
 
 # --------------------------------------------------------------------------- jobs
+def clean_title(title: str) -> str:
+    return " ".join(str(title).split())[:120] or "video"
+
+
+def safe_name(title: str) -> str:
+    """Filesystem-safe form of a project title: spaces and symbols become underscores."""
+    return re.sub(r"[^\w\-]+", "_", title).strip("_")[:60] or "video"
+
+
 class Job:
     def __init__(self, name: str = "untitled"):
         self.id = uuid.uuid4().hex[:10]
-        self.dir = WORK / self.id
+        self.name = clean_title(name)
+        self.dir = WORK / f"{safe_name(self.name)}_{self.id}"  # id suffix keeps same-title projects apart
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.name = re.sub(r"[^\w\-]+", "_", Path(name).stem)[:60] or "video"
         self.src: Path | None = None
         self.meta: dict = {}
         self.words: list[dict] = []
@@ -86,6 +105,51 @@ class Job:
 
     def emit(self, stage: str, pct: float = 0.0, msg: str = "", state: str = "running", **extra):
         self.events.append({"stage": stage, "pct": round(pct, 4), "msg": msg, "state": state, **extra})
+
+    def save(self):
+        """Persist job state to project.json in the job directory."""
+        data = {
+            "id": self.id,
+            "name": self.name,
+            "meta": self.meta,
+            "words": self.words,
+            "src": str(self.src) if self.src else None,
+            "settings": getattr(self, "settings", {}),
+        }
+        project_file = self.dir / "project.json"
+        with _SAVE_LOCK:
+            tmp_file = self.dir / "project.json.tmp"
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            tmp_file.replace(project_file)
+
+    @classmethod
+    def load(cls, path: Path) -> "Job | None":
+            """Load job from project.json; returns None if invalid or missing."""
+            project_file = path / "project.json"
+            if not project_file.is_file():
+                return None
+            try:
+                with open(project_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                job = cls(data.get("name", "untitled"))
+                job.id = data["id"]
+                job.dir = path
+                job.meta = data.get("meta", {})
+                job.words = data.get("words", [])
+                job.settings = data.get("settings", {})
+                src_path = data.get("src")
+                if src_path:
+                    job.src = Path(src_path)
+                    if not job.src.is_file():
+                        # Fallback: look for source file inside job dir
+                        for item in path.iterdir():
+                            if item.stem == "source":
+                                job.src = item
+                                break
+                return job
+            except Exception:
+                return None
 
     def set_source(self, path: Path, audio_only: bool = False):
         self.src = path
@@ -96,10 +160,12 @@ class Job:
 
     def public(self) -> dict:
         return {"job_id": self.id, "name": self.name, "meta": self.meta, "words": self.words,
-                "kind": "video" if self.meta.get("has_video") else "audio"}
+                "kind": "video" if self.meta.get("has_video") else "audio",
+                "settings": getattr(self, "settings", {})}
 
 
 JOBS: dict[str, Job] = {}
+_SAVE_LOCK = threading.Lock()
 
 
 def get_job(job_id: str) -> Job:
@@ -190,7 +256,7 @@ async def upload(file: UploadFile = File(...)):
     ext = Path(file.filename or "").suffix.lower()
     if ext not in AUDIO_EXT | VIDEO_EXT:
         raise HTTPException(400, f"Unsupported file type {ext or '(none)'}")
-    job = Job(file.filename or "upload")
+    job = Job(Path(file.filename or "upload").stem)
     dest = job.dir / f"source{ext}"
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f, 1024 * 1024)
@@ -200,6 +266,7 @@ async def upload(file: UploadFile = File(...)):
         raise HTTPException(400, f"Could not read media: {e}")
     JOBS[job.id] = job
     job.emit("upload", 1, "ready", state="done")
+    job.save()
     return job.public()
 
 
@@ -214,13 +281,14 @@ def open_local(body: dict = Body(...)):
     ext = src.suffix.lower()
     if ext not in AUDIO_EXT | VIDEO_EXT:
         raise HTTPException(400, f"Unsupported file type {ext or '(none)'}")
-    job = Job(src.name)
+    job = Job(src.stem)
     try:
         job.set_source(src)
     except Exception as e:
         raise HTTPException(400, f"Could not read media: {e}")
     JOBS[job.id] = job
     job.emit("upload", 1, "ready", state="done")
+    job.save()
     return job.public()
 
 
@@ -243,6 +311,7 @@ def yt_download(body: dict = Body(...)):
         path = download(body["url"], job.dir, bool(body.get("audio_only")),
                         lambda p, m: job.emit("download", p, m))
         job.set_source(path, audio_only=bool(body.get("audio_only")))
+        job.save()
         job.emit("download", 1, "downloaded", state="done", result=job.public())
 
     run_task(job, "download", task)
@@ -260,8 +329,93 @@ def transcribe(job_id: str, body: dict = Body(...)):
         job.words = words
         job.emit("transcribe", 1, f"{len(words)} words ({info['language']})", state="done",
                  result={"words": words, "language": info["language"]})
+        job.save()
 
     run_task(job, "transcribe", task)
+    return {"ok": True}
+
+
+@app.get("/api/jobs")
+def list_jobs():
+    return [
+        {
+            "job_id": job.id,
+            "name": job.name,
+            "meta": job.meta,
+            "word_count": len(job.words),
+            "dir": str(job.dir),
+        }
+        for job in JOBS.values()
+    ]
+
+
+@app.post("/api/jobs/{job_id}/rename")
+def rename_job(job_id: str, body: dict = Body(...)):
+    job = get_job(job_id)
+    if not str(body.get("name", "")).strip():
+        raise HTTPException(400, "Project name cannot be empty.")
+    if job.busy:
+        raise HTTPException(409, "Wait for the current task to finish before renaming.")
+    old_dir = job.dir
+    new_dir = WORK / f"{safe_name(clean_title(body['name']))}_{job.id}"
+    if new_dir != old_dir:
+        try:
+            old_dir.rename(new_dir)
+        except OSError:
+            raise HTTPException(409, "Could not rename the folder. Close the video and try again.")
+        job.dir = new_dir
+        if job.src and job.src.is_relative_to(old_dir):
+            job.src = new_dir / job.src.relative_to(old_dir)
+    job.name = clean_title(body["name"])
+    job.save()
+    return {"job_id": job.id, "name": job.name}
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job_data(job_id: str):
+    return get_job(job_id).public()
+
+
+@app.post("/api/jobs/{job_id}/settings")
+def update_job_settings(job_id: str, settings: dict = Body(...)):
+    job = get_job(job_id)
+    job.settings = settings
+    if "words" in settings:
+        job.words = settings["words"]
+    job.save()
+    return {"ok": True}
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str):
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job = JOBS.pop(job_id)
+    if job.dir.exists():
+        import shutil
+        shutil.rmtree(job.dir)
+    return {"ok": True}
+
+
+@app.get("/api/settings/cleanup")
+def get_cleanup_settings():
+    path = CLEANUP_SETTINGS_PATH
+    if path.exists():
+        with open(path, "r") as f:
+            return json.load(f)
+    return {"max_age_days": 3}
+
+
+@app.post("/api/settings/cleanup")
+def set_cleanup_settings(data: dict = Body(...)):
+    days = data.get("max_age_days")
+    if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 30:
+        raise HTTPException(400, "max_age_days must be a whole number from 1 to 30")
+    path = CLEANUP_SETTINGS_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump({"max_age_days": days}, f)
     return {"ok": True}
 
 
@@ -400,13 +554,13 @@ def render(job_id: str, body: dict = Body(...)):
 
         stamp = time.strftime("%Y%m%d_%H%M%S")
         if mode == "mp4":
-            out = EXPORTS / f"{job.name}_{stamp}.mp4"
+            out = EXPORTS / f"{safe_name(job.name)}_{stamp}.mp4"
             info = vr.export_mp4(job.src, lst, out, meta, _layout_args(body), prog)
         elif mode == "webm":
-            out = EXPORTS / f"{job.name}_{stamp}_alpha.webm"
+            out = EXPORTS / f"{safe_name(job.name)}_{stamp}_alpha.webm"
             info = vr.export_webm_alpha(lst, out, meta, prog)
         else:
-            out = EXPORTS / f"{job.name}_{stamp}_alpha.mov"
+            out = EXPORTS / f"{safe_name(job.name)}_{stamp}_alpha.mov"
             info = vr.export_mov_alpha(lst, out, meta, prog)
         job.emit("render", 1, "done", state="done",
                  result={"file": out.name, "url": f"/exports/{out.name}", "info": info})

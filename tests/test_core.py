@@ -1,3 +1,5 @@
+import asyncio
+import json
 import os
 import tempfile
 import unittest
@@ -110,6 +112,79 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(active.exists())
             self.assertTrue(recent.exists())
             self.assertTrue((webview / "profile").exists())
+
+    def test_startup_keeps_loaded_stale_project(self):
+        from app import main
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(main, "WORK", Path(temp_dir)), patch.object(main, "ensure_fonts"), patch.dict(main.JOBS, clear=True):
+            project = Path(temp_dir) / "0123456789"
+            project.mkdir()
+            project_file = project / "project.json"
+            project_file.write_text(json.dumps({"id": "0123456789", "name": "clip", "words": [], "settings": {}}), encoding="utf-8")
+            source = project / "source.mp4"
+            source.write_text("video", encoding="utf-8")
+            old_time = 1_000_000
+            for path in (project_file, source, project):
+                os.utime(path, (old_time, old_time))
+
+            async def start_and_stop():
+                async with main._lifespan(main.app):
+                    self.assertIn("0123456789", main.JOBS)
+
+            asyncio.run(start_and_stop())
+
+            self.assertTrue(project.exists())
+            self.assertTrue(source.exists())
+
+    def test_cleanup_days_rejects_out_of_range_and_saves_valid(self):
+        from fastapi import HTTPException
+        from app import main
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(main, "CLEANUP_SETTINGS_PATH", Path(temp_dir) / "cleanup.json"):
+            for bad in (0, -5, 31, 2.5, "3", True, None):
+                with self.assertRaises(HTTPException):
+                    main.set_cleanup_settings({"max_age_days": bad})
+            self.assertFalse((Path(temp_dir) / "cleanup.json").exists())
+
+            main.set_cleanup_settings({"max_age_days": 5})
+            self.assertEqual(json.loads((Path(temp_dir) / "cleanup.json").read_text(encoding="utf-8")), {"max_age_days": 5})
+
+    def test_project_save_then_load_round_trips(self):
+        from app import main
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(main, "WORK", Path(temp_dir)):
+            job = main.Job("clip")
+            job.words = [{"w": "hello", "start": 0.5, "end": 0.9}]
+            job.settings = {"font_size": 80}
+            job.save()
+            loaded = main.Job.load(job.dir)
+
+            self.assertEqual(loaded.id, job.id)
+            self.assertEqual(loaded.name, "clip")
+            self.assertEqual(loaded.words, job.words)
+            self.assertEqual(loaded.settings, {"font_size": 80})
+
+    def test_rename_moves_folder_keeps_source_and_refuses_busy_job(self):
+        from fastapi import HTTPException
+        from app import main
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(main, "WORK", Path(temp_dir)), patch.dict(main.JOBS, clear=True):
+            job = main.Job("Episode 1.5 Intro")
+            self.assertEqual(job.dir.name, f"Episode_1_5_Intro_{job.id}")
+            job.src = job.dir / "source.mp4"
+            job.src.write_text("video", encoding="utf-8")
+            main.JOBS[job.id] = job
+
+            main.rename_job(job.id, {"name": "New Title"})
+
+            self.assertEqual(job.name, "New Title")
+            self.assertEqual(job.dir, Path(temp_dir) / f"New_Title_{job.id}")
+            self.assertEqual(job.src, job.dir / "source.mp4")
+            self.assertTrue(job.src.is_file())
+            job.busy = True
+            with self.assertRaises(HTTPException):
+                main.rename_job(job.id, {"name": "Other"})
+            self.assertEqual(job.name, "New Title")
 
 
 if __name__ == "__main__":

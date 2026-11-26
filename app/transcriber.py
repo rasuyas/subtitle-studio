@@ -74,6 +74,7 @@ def get_model(name: str):
     if name in _models:
         return _models[name]
     _setup_cuda_paths()
+    _models.clear()  # keep one model loaded; two can exhaust RAM or GPU memory
     from faster_whisper import WhisperModel
     if sys.platform == "darwin":
         m = WhisperModel(name, device="cpu", compute_type="int8")
