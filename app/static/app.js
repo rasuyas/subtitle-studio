@@ -2,6 +2,7 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 async function api(url, body, method = 'POST', signal) {
   const r = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, signal });
@@ -1468,13 +1469,13 @@ window.addEventListener('pywebviewready', enableDesktopUI);
         return;
       }
       $('#jobsList').innerHTML = jobs.map(j => `
-        <div class="job-item">
-          <div class="info" onclick="loadSavedJob('${j.job_id}')">
-            <div class="name">${j.name}</div>
-            <div class="meta">${(j.meta.duration || 0).toFixed(1)}s · ${j.word_count || 0} words</div>
+        <div class="job-item" data-id="${j.job_id}">
+          <div class="info" data-open="${j.job_id}">
+            <div class="name" data-rename="${j.job_id}" title="Double-click to rename">${esc(j.name)}</div>
+            <div class="meta">${(Number(j.meta.duration) || 0).toFixed(1)}s · ${j.word_count || 0} words</div>
           </div>
           <div class="actions">
-            <button class="btn btn-danger text-xs !p-1" onclick="deleteJob(event, '${j.job_id}', '${j.name.replace(/'/g, "\\'")}')">Delete</button>
+            <button class="btn btn-danger text-xs !p-1" data-del="${j.job_id}" data-name="${esc(j.name)}">Delete</button>
           </div>
         </div>
       `).join('');
@@ -1524,7 +1525,7 @@ window.addEventListener('pywebviewready', enableDesktopUI);
     e.stopPropagation();
     if (!confirm(`Delete project "${name}"?`)) return;
     if (!confirm(`Are you sure? This will permanently delete the folder and all its data.`)) return;
-    
+
     try {
       await api(`/api/jobs/${id}`, null, 'DELETE');
       $('#openJobsBtn').click(); // Refresh list
@@ -1532,6 +1533,39 @@ window.addEventListener('pywebviewready', enableDesktopUI);
       alert('Failed to delete job.');
     }
   };
+
+  let openTimer;
+  $('#jobsList').addEventListener('click', (ev) => {
+    const del = ev.target.closest('[data-del]');
+    if (del) return deleteJob(ev, del.dataset.del, del.dataset.name);
+    const open = ev.target.closest('[data-open]');
+    if (!open) return;
+    // wait briefly so a double-click on the name can rename before the modal closes
+    clearTimeout(openTimer);
+    if (ev.detail > 1) return;
+    openTimer = setTimeout(() => loadSavedJob(open.dataset.open), 300);
+  });
+
+  $('#jobsList').addEventListener('dblclick', async (ev) => {
+    const el = ev.target.closest('[data-rename]');
+    if (!el) return;
+    const id = el.dataset.rename;
+    const current = el.textContent;
+    const name = prompt('Project name', current);
+    if (!name || name.trim() === current) return;
+    try {
+      const r = await (await api(`/api/jobs/${id}/rename`, { name })).json();
+      if (S.job && S.job.job_id === id) {
+        const jn = $('#jobname');
+        jn.textContent = jn.textContent.replace(S.job.name, r.name);
+        S.job.name = r.name;
+        $('#ytTitle').textContent = r.name;
+      }
+      $('#openJobsBtn').click(); // Refresh list
+    } catch (e) {
+      alert(e.message);
+    }
+  });
   window.getJobSettings = () => ({ layout: S.layout, pip: S.pip, blur: S.blur, reframe: S.reframe, mode: S.mode, showVideo: S.showVideo, chunk: S.chunk, style: S.style, main: S.main, face: S.face });
   window.setJobSettings = (s) => {
     S.layout = s.layout || S.layout; S.pip = s.pip || S.pip; S.blur = s.blur ?? S.blur;

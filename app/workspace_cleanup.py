@@ -10,8 +10,12 @@ import time
 from collections.abc import Iterable
 
 
-_JOB_DIR = re.compile(r"[0-9a-f]{10}\Z")
+_JOB_DIR = re.compile(r"(?:.+_)?[0-9a-f]{10}\Z")  # folders are "<title>_<id>" or just "<id>"
 CLEANUP_SETTINGS_PATH = Path(__file__).resolve().parent.parent / "user_settings" / "cleanup.json"
+
+
+def _job_id(folder_name: str) -> str:
+    return folder_name[-10:].casefold()
 
 
 def _load_cleanup_max_age_days() -> int:
@@ -61,7 +65,7 @@ def cleanup_workspace(
     for path in workspace.iterdir():
         if not _JOB_DIR.fullmatch(path.name) or path.is_symlink() or not path.is_dir():
             continue
-        if path.name.casefold() in active or _last_modified(path) >= cutoff:
+        if _job_id(path.name) in active or _last_modified(path) >= cutoff:
             continue
         shutil.rmtree(path)
         removed.append(path)

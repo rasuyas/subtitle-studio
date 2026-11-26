@@ -153,7 +153,7 @@ class CoreTests(unittest.TestCase):
         from app import main
 
         with tempfile.TemporaryDirectory() as temp_dir, patch.object(main, "WORK", Path(temp_dir)):
-            job = main.Job("clip.mp4")
+            job = main.Job("clip")
             job.words = [{"w": "hello", "start": 0.5, "end": 0.9}]
             job.settings = {"font_size": 80}
             job.save()
@@ -163,6 +163,28 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(loaded.name, "clip")
             self.assertEqual(loaded.words, job.words)
             self.assertEqual(loaded.settings, {"font_size": 80})
+
+    def test_rename_moves_folder_keeps_source_and_refuses_busy_job(self):
+        from fastapi import HTTPException
+        from app import main
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(main, "WORK", Path(temp_dir)), patch.dict(main.JOBS, clear=True):
+            job = main.Job("Episode 1.5 Intro")
+            self.assertEqual(job.dir.name, f"Episode_1_5_Intro_{job.id}")
+            job.src = job.dir / "source.mp4"
+            job.src.write_text("video", encoding="utf-8")
+            main.JOBS[job.id] = job
+
+            main.rename_job(job.id, {"name": "New Title"})
+
+            self.assertEqual(job.name, "New Title")
+            self.assertEqual(job.dir, Path(temp_dir) / f"New_Title_{job.id}")
+            self.assertEqual(job.src, job.dir / "source.mp4")
+            self.assertTrue(job.src.is_file())
+            job.busy = True
+            with self.assertRaises(HTTPException):
+                main.rename_job(job.id, {"name": "Other"})
+            self.assertEqual(job.name, "New Title")
 
 
 if __name__ == "__main__":

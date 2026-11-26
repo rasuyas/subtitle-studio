@@ -82,12 +82,21 @@ app = FastAPI(title="Subtitle Studio", lifespan=_lifespan)
 
 
 # --------------------------------------------------------------------------- jobs
+def clean_title(title: str) -> str:
+    return " ".join(str(title).split())[:120] or "video"
+
+
+def safe_name(title: str) -> str:
+    """Filesystem-safe form of a project title: spaces and symbols become underscores."""
+    return re.sub(r"[^\w\-]+", "_", title).strip("_")[:60] or "video"
+
+
 class Job:
     def __init__(self, name: str = "untitled"):
         self.id = uuid.uuid4().hex[:10]
-        self.dir = WORK / self.id
+        self.name = clean_title(name)
+        self.dir = WORK / f"{safe_name(self.name)}_{self.id}"  # id suffix keeps same-title projects apart
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.name = re.sub(r"[^\w\-]+", "_", Path(name).stem)[:60] or "video"
         self.src: Path | None = None
         self.meta: dict = {}
         self.words: list[dict] = []
@@ -247,7 +256,7 @@ async def upload(file: UploadFile = File(...)):
     ext = Path(file.filename or "").suffix.lower()
     if ext not in AUDIO_EXT | VIDEO_EXT:
         raise HTTPException(400, f"Unsupported file type {ext or '(none)'}")
-    job = Job(file.filename or "upload")
+    job = Job(Path(file.filename or "upload").stem)
     dest = job.dir / f"source{ext}"
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f, 1024 * 1024)
@@ -272,7 +281,7 @@ def open_local(body: dict = Body(...)):
     ext = src.suffix.lower()
     if ext not in AUDIO_EXT | VIDEO_EXT:
         raise HTTPException(400, f"Unsupported file type {ext or '(none)'}")
-    job = Job(src.name)
+    job = Job(src.stem)
     try:
         job.set_source(src)
     except Exception as e:
@@ -338,6 +347,28 @@ def list_jobs():
         }
         for job in JOBS.values()
     ]
+
+
+@app.post("/api/jobs/{job_id}/rename")
+def rename_job(job_id: str, body: dict = Body(...)):
+    job = get_job(job_id)
+    if not str(body.get("name", "")).strip():
+        raise HTTPException(400, "Project name cannot be empty.")
+    if job.busy:
+        raise HTTPException(409, "Wait for the current task to finish before renaming.")
+    old_dir = job.dir
+    new_dir = WORK / f"{safe_name(clean_title(body['name']))}_{job.id}"
+    if new_dir != old_dir:
+        try:
+            old_dir.rename(new_dir)
+        except OSError:
+            raise HTTPException(409, "Could not rename the folder. Close the video and try again.")
+        job.dir = new_dir
+        if job.src and job.src.is_relative_to(old_dir):
+            job.src = new_dir / job.src.relative_to(old_dir)
+    job.name = clean_title(body["name"])
+    job.save()
+    return {"job_id": job.id, "name": job.name}
 
 
 @app.get("/api/jobs/{job_id}")
@@ -523,13 +554,13 @@ def render(job_id: str, body: dict = Body(...)):
 
         stamp = time.strftime("%Y%m%d_%H%M%S")
         if mode == "mp4":
-            out = EXPORTS / f"{job.name}_{stamp}.mp4"
+            out = EXPORTS / f"{safe_name(job.name)}_{stamp}.mp4"
             info = vr.export_mp4(job.src, lst, out, meta, _layout_args(body), prog)
         elif mode == "webm":
-            out = EXPORTS / f"{job.name}_{stamp}_alpha.webm"
+            out = EXPORTS / f"{safe_name(job.name)}_{stamp}_alpha.webm"
             info = vr.export_webm_alpha(lst, out, meta, prog)
         else:
-            out = EXPORTS / f"{job.name}_{stamp}_alpha.mov"
+            out = EXPORTS / f"{safe_name(job.name)}_{stamp}_alpha.mov"
             info = vr.export_mov_alpha(lst, out, meta, prog)
         job.emit("render", 1, "done", state="done",
                  result={"file": out.name, "url": f"/exports/{out.name}", "info": info})
