@@ -11,7 +11,9 @@ from typing import Callable
 
 import numpy as np
 
-MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+from .paths import DATA_ROOT
+
+MODELS_DIR = DATA_ROOT / "models"
 _models: dict = {}
 
 

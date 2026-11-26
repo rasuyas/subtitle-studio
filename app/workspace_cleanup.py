@@ -9,9 +9,10 @@ import shutil
 import time
 from collections.abc import Iterable
 
+from .paths import DATA_ROOT
 
 _JOB_DIR = re.compile(r"(?:.+_)?[0-9a-f]{10}\Z")  # folders are "<title>_<id>" or just "<id>"
-CLEANUP_SETTINGS_PATH = Path(__file__).resolve().parent.parent / "user_settings" / "cleanup.json"
+CLEANUP_SETTINGS_PATH = DATA_ROOT / "user_settings" / "cleanup.json"
 
 
 def _job_id(folder_name: str) -> str:

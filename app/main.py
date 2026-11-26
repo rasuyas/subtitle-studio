@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import subtitle_engine as se
+from .paths import DATA_ROOT, SOURCE_ROOT
 from .script_alignment import fix_words_from_script
 from .transcript_editing import replace_transcript_matches
 from . import video_renderer as vr
@@ -30,10 +31,9 @@ from .workspace_cleanup import CLEANUP_SETTINGS_PATH, cleanup_workspace
 
 _SUBPROC_KW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
-ROOT = Path(__file__).resolve().parent.parent
-WORK, EXPORTS, STATIC = ROOT / "workspace", ROOT / "exports", Path(__file__).parent / "static"
+WORK, EXPORTS, STATIC = DATA_ROOT / "workspace", DATA_ROOT / "exports", Path(__file__).parent / "static"
 for d in (WORK, EXPORTS, se.FONT_DIR, MODELS_DIR):
-    d.mkdir(exist_ok=True)
+    d.mkdir(parents=True, exist_ok=True)
 
 AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".ogg"}
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm"}
@@ -199,7 +199,7 @@ def index():
 
 @app.get("/api/health")
 def health():
-    version = (Path(__file__).resolve().parent.parent / "VERSION").read_text(encoding="utf-8").strip()
+    version = (SOURCE_ROOT / "VERSION").read_text(encoding="utf-8").strip()
     return {"ok": True, "version": version}
 
 

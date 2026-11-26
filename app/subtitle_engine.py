@@ -11,7 +11,9 @@ import sys
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
+from .paths import DATA_ROOT
+
+FONT_DIR = DATA_ROOT / "fonts"
 LOGGER = logging.getLogger(__name__)
 W, H = 1080, 1920
 PREFERRED = ["Montserrat-ExtraBold", "Poppins-ExtraBold", "Anton-Regular"]

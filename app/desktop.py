@@ -15,8 +15,9 @@ import urllib.request
 from pathlib import Path
 
 from app import updater
+from app.paths import DATA_ROOT, FROZEN, SOURCE_ROOT
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = DATA_ROOT
 WORK = ROOT / "workspace"
 EXPORTS = ROOT / "exports"
 STATIC = Path(__file__).resolve().parent / "static"
@@ -124,6 +125,8 @@ def _safe_export(filename: str) -> Path | None:
 
 
 def _initial_window_geometry() -> dict[str, object]:
+    if sys.platform == "darwin":  # shortcut: skip the Tk probe on macOS (suspected crash with Cocoa window); upgrade by sizing the window via pywebview on Mac
+        return {}
     root = None
     try:
         import tkinter as tk
@@ -213,6 +216,12 @@ class DesktopApi:
         ).start()
 
     def _check_update_worker(self, generation: int | None = None):
+        if FROZEN:  # an .app is replaced, not patched in place
+            with self._update_lock:
+                self._update_status.update(
+                    state="current", message="Updates arrive with a new app download."
+                )
+            return
         try:
             channel = _read_update_channel()
             result = updater.check_for_updates(ROOT, timeout=4.0, channel=channel)
@@ -394,6 +403,10 @@ def _wait_for_server(port: int, server_err: list[Exception], timeout: float = 15
 
 def main():
     _setup_logging()
+    if FROZEN:  # Finder launches with a minimal PATH
+        os.environ["PATH"] = os.pathsep.join(
+            [str(SOURCE_ROOT / "ffmpeg"), "/opt/homebrew/bin", "/usr/local/bin", os.environ.get("PATH", "")]
+        )
     for cleanup_error in updater.cleanup_old_files(ROOT):
         logging.warning("Could not remove leftover update file: %s", cleanup_error)
     updater.ensure_command_permissions(ROOT)
@@ -472,6 +485,9 @@ def main():
             storage_path=str(storage_dir),
             icon=str(icon_path) if icon_path else None,
         )
+    except Exception:
+        logging.exception("Desktop window failed")  # Finder launches discard stderr; the log keeps it
+        raise
     finally:
         server.should_exit = True
         server_thread.join(timeout=3.0)

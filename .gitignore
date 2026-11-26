@@ -83,5 +83,9 @@ tmp/
 # ---------- Shortcuts ------------
 *.lnk
 
+# ---------- Packaging ----------
+build/
+dist/
+
 # ---------- Personal settings (written at runtime) ----------
 user_settings/
