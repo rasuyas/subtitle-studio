@@ -216,7 +216,7 @@ def apply_archive(archive_path: Path, root: Path) -> bool:
     copied = 0
 
     with tempfile.TemporaryDirectory(prefix="subtitle-studio-update-") as temp_dir:
-        extracted = Path(temp_dir) / "files"
+        extracted = (Path(temp_dir) / "files").resolve()  # macOS temp dir is a symlink (/var -> /private/var)
         extracted.mkdir()
         with zipfile.ZipFile(archive_path) as archive:
             file_names = [info.filename for info in archive.infolist() if not info.is_dir()]
