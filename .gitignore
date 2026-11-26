@@ -21,6 +21,7 @@ env/
 cookies.txt
 *cookies*.txt
 .opencodeignore
+AUDIT.md
 
 # ---------- App runtime folders (created automatically on first run) ----------
 # temp downloads, uploads and rendered subtitle frames
