@@ -1510,8 +1510,12 @@ window.addEventListener('pywebviewready', enableDesktopUI);
 
   $('#saveCleanupBtn').onclick = async () => {
     const days = parseInt($('#cleanupDays').value);
-    await api('/api/settings/cleanup', { max_age_days: days }, 'POST');
-    alert('Cleanup settings saved.');
+    try {
+      await api('/api/settings/cleanup', { max_age_days: days }, 'POST');
+      alert('Cleanup settings saved.');
+    } catch (e) {
+      alert(e.message);
+    }
   };
 
   $('#closeJobsBtn').onclick = () => $('#jobsModal').classList.add('hidden');

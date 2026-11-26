@@ -11,13 +11,13 @@ from collections.abc import Iterable
 
 
 _JOB_DIR = re.compile(r"[0-9a-f]{10}\Z")
-_DEFAULT_CLEANUP_PATH = Path("user_settings/cleanup.json")
+CLEANUP_SETTINGS_PATH = Path(__file__).resolve().parent.parent / "user_settings" / "cleanup.json"
 
 
 def _load_cleanup_max_age_days() -> int:
     """Read cleanup max age from user settings, fallback to 3 days."""
     try:
-        with open(_DEFAULT_CLEANUP_PATH, "r") as f:
+        with open(CLEANUP_SETTINGS_PATH, "r") as f:
             return int(json.load(f).get("max_age_days", 3))
     except (FileNotFoundError, ValueError, TypeError):
         return 3

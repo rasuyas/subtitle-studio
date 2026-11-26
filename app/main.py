@@ -26,7 +26,7 @@ from .script_alignment import fix_words_from_script
 from .transcript_editing import replace_transcript_matches
 from . import video_renderer as vr
 from .transcriber import MODELS_DIR, list_custom_models
-from .workspace_cleanup import cleanup_workspace
+from .workspace_cleanup import CLEANUP_SETTINGS_PATH, cleanup_workspace
 
 _SUBPROC_KW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
@@ -68,7 +68,7 @@ async def _lifespan(_app: FastAPI):
                 JOBS[job.id] = job
         logging.info("Loaded %d existing jobs from workspace.", len(JOBS))
 
-    cleanup_workspace(WORK)
+    cleanup_workspace(WORK, active_job_ids=JOBS)
     threading.Thread(target=ensure_fonts, daemon=True).start()
     try:
         yield
@@ -108,8 +108,11 @@ class Job:
             "settings": getattr(self, "settings", {}),
         }
         project_file = self.dir / "project.json"
-        with open(project_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        with _SAVE_LOCK:
+            tmp_file = self.dir / "project.json.tmp"
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            tmp_file.replace(project_file)
 
     @classmethod
     def load(cls, path: Path) -> "Job | None":
@@ -153,6 +156,7 @@ class Job:
 
 
 JOBS: dict[str, Job] = {}
+_SAVE_LOCK = threading.Lock()
 
 
 def get_job(job_id: str) -> Job:
@@ -298,6 +302,7 @@ def yt_download(body: dict = Body(...)):
         path = download(body["url"], job.dir, bool(body.get("audio_only")),
                         lambda p, m: job.emit("download", p, m))
         job.set_source(path, audio_only=bool(body.get("audio_only")))
+        job.save()
         job.emit("download", 1, "downloaded", state="done", result=job.public())
 
     run_task(job, "download", task)
@@ -364,7 +369,7 @@ def delete_job(job_id: str):
 
 @app.get("/api/settings/cleanup")
 def get_cleanup_settings():
-    path = Path("user_settings/cleanup.json")
+    path = CLEANUP_SETTINGS_PATH
     if path.exists():
         with open(path, "r") as f:
             return json.load(f)
@@ -373,10 +378,13 @@ def get_cleanup_settings():
 
 @app.post("/api/settings/cleanup")
 def set_cleanup_settings(data: dict = Body(...)):
-    path = Path("user_settings/cleanup.json")
+    days = data.get("max_age_days")
+    if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 30:
+        raise HTTPException(400, "max_age_days must be a whole number from 1 to 30")
+    path = CLEANUP_SETTINGS_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
-        json.dump(data, f)
+        json.dump({"max_age_days": days}, f)
     return {"ok": True}
 
 
