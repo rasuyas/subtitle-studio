@@ -343,6 +343,8 @@ function fmtClock(s) {
   const m = Math.floor(v / 60);
   return `${m}:${(v - m * 60).toFixed(1).padStart(4, '0')}`;
 }
+// shortcut: hh:mm:ss via Date, wraps after 24h, upgrade to manual h/m/s split if media ever runs that long
+const fmtHMS = s => new Date(Math.max(0, Number(s) || 0) * 1000).toISOString().slice(11, 19);
 
 function updateTimeUI(t) {
   const dur = S.job ? (S.job.meta.duration || vid.duration || 0) : 0;
@@ -1468,17 +1470,20 @@ window.addEventListener('pywebviewready', enableDesktopUI);
         $('#jobsList').innerHTML = '<div class="text-xs text-mute p-4 text-center">No saved jobs found</div>';
         return;
       }
-      $('#jobsList').innerHTML = jobs.map(j => `
+      $('#jobsList').innerHTML = jobs.map(j => {
+        const words = Number(j.word_count) || 0;
+        return `
         <div class="job-item" data-id="${j.job_id}">
           <div class="info" data-open="${j.job_id}">
-            <div class="name" data-rename="${j.job_id}" title="Double-click to rename">${esc(j.name)}</div>
-            <div class="meta">${(Number(j.meta.duration) || 0).toFixed(1)}s · ${j.word_count || 0} words</div>
+            <div class="name" data-rename="${j.job_id}" tabindex="0" role="button" aria-label="Rename ${esc(j.name)}" title="${esc(j.name)} — double-click or press Enter to rename">${esc(j.name)}</div>
+            <div class="meta">${fmtHMS(j.meta.duration)} · ${words.toLocaleString()} ${words === 1 ? 'word' : 'words'}</div>
           </div>
           <div class="actions">
             <button class="btn btn-danger text-xs !p-1" data-del="${j.job_id}" data-name="${esc(j.name)}">Delete</button>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     } catch (e) {
       $('#jobsList').innerHTML = '<div class="text-xs text-error p-4 text-center">Failed to load jobs</div>';
     }
@@ -1546,9 +1551,7 @@ window.addEventListener('pywebviewready', enableDesktopUI);
     openTimer = setTimeout(() => loadSavedJob(open.dataset.open), 300);
   });
 
-  $('#jobsList').addEventListener('dblclick', async (ev) => {
-    const el = ev.target.closest('[data-rename]');
-    if (!el) return;
+  const renameJob = async (el) => {
     const id = el.dataset.rename;
     const current = el.textContent;
     const name = prompt('Project name', current);
@@ -1565,6 +1568,15 @@ window.addEventListener('pywebviewready', enableDesktopUI);
     } catch (e) {
       alert(e.message);
     }
+  };
+  $('#jobsList').addEventListener('dblclick', (ev) => {
+    const el = ev.target.closest('[data-rename]');
+    if (el) renameJob(el);
+  });
+  // Keyboard path: the name is focusable, Enter renames (touch users can't double-click)
+  $('#jobsList').addEventListener('keydown', (ev) => {
+    const el = ev.target.closest('[data-rename]');
+    if (el && ev.key === 'Enter') renameJob(el);
   });
   window.getJobSettings = () => ({ layout: S.layout, pip: S.pip, blur: S.blur, reframe: S.reframe, mode: S.mode, showVideo: S.showVideo, chunk: S.chunk, style: S.style, main: S.main, face: S.face });
   window.setJobSettings = (s) => {
