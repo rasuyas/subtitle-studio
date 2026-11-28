@@ -270,7 +270,7 @@ let es = null;
 const STAGE = { download: 'Downloading', transcribe: 'Transcribing', render: 'Rendering', upload: 'Uploading' };
 function setStatus(stage, pct, msg, state = 'running') {
   $('#stLabel').textContent = STAGE[stage] || 'Status';
-  $('#stBar').style.width = Math.round(pct * 100) + '%';
+  $('#stBar').style.transform = `scaleX(${Math.min(1, Math.max(0, pct))})`;
   $('#stBar').style.background = state === 'error' ? '#ff5c5c' : '#E50914';
   $('#stMsg').textContent = msg;
   $('#stMsg').style.color = state === 'error' ? '#ff8a8a' : '';
