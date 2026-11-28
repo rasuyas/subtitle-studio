@@ -89,3 +89,6 @@ dist/
 
 # ---------- Personal settings (written at runtime) ----------
 user_settings/
+
+# ---------- Local planning notes ----------
+animation-plans/
