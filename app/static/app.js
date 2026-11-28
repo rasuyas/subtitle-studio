@@ -271,9 +271,9 @@ const STAGE = { download: 'Downloading', transcribe: 'Transcribing', render: 'Re
 function setStatus(stage, pct, msg, state = 'running') {
   $('#stLabel').textContent = STAGE[stage] || 'Status';
   $('#stBar').style.transform = `scaleX(${Math.min(1, Math.max(0, pct))})`;
-  $('#stBar').style.background = state === 'error' ? '#ff5c5c' : '#E50914';
+  $('#stBar').style.background = state === 'error' ? 'var(--danger)' : 'var(--accent)';
   $('#stMsg').textContent = msg;
-  $('#stMsg').style.color = state === 'error' ? '#ff8a8a' : '';
+  $('#stMsg').style.color = state === 'error' ? 'var(--danger)' : '';
 }
 
 function updateRenderButton(busy = false) {
@@ -534,7 +534,7 @@ drop.addEventListener('click', async e => {
   const path = await d.pick_media_file();
   if (path) openLocalPath(path);
 });
-['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.style.borderColor = '#E50914'; }));
+['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; }));
 ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.style.borderColor = ''; }));
 drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) upload(f); });
 

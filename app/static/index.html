@@ -162,7 +162,7 @@
           <button id="transcriptReplaceAll" class="btn !py-1 !px-2 text-xs" type="button" disabled>Replace All</button>
         </div>
       </div>
-      <div id="grid" class="transcript-grid flex flex-col gap-2 overflow-auto pr-1"></div>
+      <div id="grid" class="transcript-grid flex flex-col overflow-auto pr-1"></div>
     </div>
   </section>
 
@@ -186,7 +186,7 @@
       <label id="blurOpt" class="hidden items-center gap-2 text-xs text-mute mt-3"><input type="checkbox" id="blur"> Blurred background with centered video</label>
     </div>
 
-    <div class="panel">
+    <div class="panel subtitle-style-panel">
       <h2>Subtitle style</h2>
       <div id="styleControls"></div>
     </div>
@@ -211,23 +211,21 @@
 
 <div id="jobsModal" class="modal-overlay hidden">
   <div class="modal-content panel">
-    <div class="flex items-center justify-between mb-4">
+    <div class="modal-head">
       <h2 class="!mb-0">Saved Jobs</h2>
       <button id="closeJobsBtn" class="btn !py-1 !px-2 text-xs">Close</button>
     </div>
-    
-    <div class="flex flex-col gap-3 mb-4 p-3 bg-black/20 rounded-lg">
-      <div class="flex items-center justify-between gap-4">
-        <label class="text-xs font-semibold">Auto-Cleanup (Days)</label>
-        <div class="flex items-center gap-2">
-          <input type="number" id="cleanupDays" class="bg-[#0f1114] border border-[#2a2f38] rounded px-2 py-1 text-xs w-16" min="1" max="30" value="3">
-          <button id="saveCleanupBtn" class="btn !py-1 !px-2 text-xs btn-primary">Save</button>
-        </div>
+
+    <div class="cleanup-block">
+      <div class="cleanup-row">
+        <label class="cleanup-label" for="cleanupDays">Auto-cleanup (days)</label>
+        <input type="number" id="cleanupDays" class="field cleanup-input" min="1" max="30" value="3">
+        <button id="saveCleanupBtn" class="btn btn-primary !py-1 !px-2 text-xs" type="button">Save</button>
       </div>
-      <p class="text-[10px] text-mute leading-tight">Jobs older than this will be deleted at startup.</p>
+      <p class="cleanup-hint">Jobs older than this are deleted at startup.</p>
     </div>
 
-    <div id="jobsList" class="flex flex-col gap-1 max-h-[50vh] overflow-y-auto">
+    <div id="jobsList" class="jobs-list">
       <div class="text-xs text-mute p-4 text-center">Loading jobs...</div>
     </div>
   </div>
