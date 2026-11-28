@@ -90,5 +90,7 @@ dist/
 # ---------- Personal settings (written at runtime) ----------
 user_settings/
 
-# ---------- Local planning notes ----------
+# ---------- Local planning notes and scratch harnesses ----------
 animation-plans/
+# overrides the !docs/** exception above
+docs/break-ui/
