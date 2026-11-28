@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0 - 2026-11-28
+
+### Added
+- Dropdown menus open the app's styled list instead of the native system menu. Keyboard: Space, Enter or Alt+Down opens, arrows move, Escape closes.
+- Deleting a project asks for confirmation; Cancel is focused by default.
+- Toast notifications report saves and failures.
+- macOS packaging: packaged builds keep user data in Application Support.
+- Saved Jobs show full names, clock-style durations and pluralized counts.
+
+### Changed
+- Refreshed dark theme and workspace styling.
+- Modal, button and progress bar motion uses ease-out curves; reduced-motion settings disable it.
+
+### Fixed
+- Pressing Space on an open dropdown no longer also starts or pauses playback.
+- Update extraction resolves its path correctly.
+
 ## 0.4.0 - 2026-11-26
 
 ### Fixed
