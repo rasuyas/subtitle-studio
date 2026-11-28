@@ -231,6 +231,19 @@
   </div>
 </div>
 
+<div id="confirmModal" class="modal-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+  <div class="modal-content panel modal-confirm">
+    <div class="modal-head"><h2 id="confirmTitle" class="!mb-0"></h2></div>
+    <p id="confirmMessage" class="modal-message"></p>
+    <div class="modal-actions">
+      <button id="confirmCancel" class="btn text-xs" type="button">Cancel</button>
+      <button id="confirmOk" class="btn text-xs" type="button"></button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" aria-live="polite"></div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>

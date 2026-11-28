@@ -4,6 +4,110 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+/* non-blocking status message; container and aria-live live in index.html */
+function showToast(message, kind = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast toast-${kind}`;
+  el.textContent = message;
+  $('.toast-stack').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+/* in-app replacement for confirm(); Escape cancels, Enter activates the focused button.
+   Destructive actions focus Cancel so a stray Enter is safe.
+   shortcut: no focus trap and one dialog at a time, upgrade if a second dialog can open over it */
+function confirmDialog({ title, message, confirmLabel = 'OK', danger = false }) {
+  const modal = $('#confirmModal'), ok = $('#confirmOk'), cancel = $('#confirmCancel');
+  $('#confirmTitle').textContent = title;
+  $('#confirmMessage').textContent = message;
+  ok.textContent = confirmLabel;
+  ok.className = `btn text-xs ${danger ? 'btn-danger-solid' : 'btn-primary'}`;
+  const returnFocus = document.activeElement;
+  modal.classList.remove('hidden');
+  (danger ? cancel : ok).focus();
+  return new Promise(resolve => {
+    const finish = result => {
+      modal.classList.add('hidden');
+      document.removeEventListener('keydown', onKey);
+      ok.onclick = cancel.onclick = null;
+      returnFocus?.focus();
+      resolve(result);
+    };
+    const onKey = e => { if (e.key === 'Escape') finish(false); };
+    ok.onclick = () => finish(true);
+    cancel.onclick = () => finish(false);
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+/* fills the range track left of the thumb; styles.css reads --range-fill */
+const paintRange = el => el.style.setProperty('--range-fill', `${(el.value - el.min) / (el.max - el.min) * 100}%`);
+document.addEventListener('input', e => { if (e.target.type === 'range') paintRange(e.target); });
+
+/* Windows draws native <select> menus in the OS style, so select.field opens this styled list instead; the select stays the value source */
+let selectMenu = null;
+function closeSelectMenu(restoreFocus) {
+  if (!selectMenu) return;
+  const { sel, el } = selectMenu;
+  el.remove();
+  selectMenu = null;
+  if (restoreFocus) sel.focus();
+}
+function openSelectMenu(sel) {
+  closeSelectMenu(false);
+  const r = sel.getBoundingClientRect();
+  const width = Math.max(r.width, 180);
+  const below = innerHeight - r.bottom - 8;
+  const up = below < 160 && r.top > below;
+  const el = document.createElement('div');
+  el.className = 'font-picker-popup select-menu';
+  el.innerHTML = `<div class="font-picker-list" role="listbox">${[...sel.options].map((o, i) =>
+    `<button type="button" class="font-picker-option" role="option" data-i="${i}" aria-selected="${o.selected}">${esc(o.text)}</button>`).join('')}</div>`;
+  el.style.width = `${width}px`;
+  el.style.left = `${Math.max(8, Math.min(r.left, innerWidth - width - 8))}px`;
+  if (up) { el.style.top = 'auto'; el.style.bottom = `${innerHeight - r.top + 4}px`; }
+  else el.style.top = `${r.bottom + 4}px`;
+  el.firstElementChild.style.maxHeight = `${Math.max(120, (up ? r.top : below) - 14)}px`;
+  el.addEventListener('click', e => {
+    const item = e.target.closest('[data-i]');
+    if (!item) return;
+    sel.selectedIndex = +item.dataset.i;
+    sel.dispatchEvent(new Event('input', { bubbles: true }));
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    closeSelectMenu(true);
+  });
+  el.addEventListener('keydown', e => {
+    const items = [...el.querySelectorAll('[data-i]')];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.stopPropagation(); closeSelectMenu(true); }
+    else if (e.key === 'Tab') closeSelectMenu(true);
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[Math.max(0, Math.min(items.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))].focus({ preventScroll: true });
+    }
+  });
+  document.body.appendChild(el);
+  selectMenu = { sel, el };
+  el.querySelector('[aria-selected="true"]')?.focus({ preventScroll: true });
+}
+document.addEventListener('mousedown', e => {
+  if (selectMenu?.el.contains(e.target)) return;
+  const sel = e.target.closest?.('select.field');
+  if (!sel) return closeSelectMenu(false);
+  e.preventDefault(); // stops the native menu from opening
+  if (selectMenu?.sel === sel) closeSelectMenu(true);
+  else openSelectMenu(sel);
+});
+document.addEventListener('keydown', e => {
+  const sel = e.target.closest?.('select.field');
+  if (sel && !selectMenu && (e.key === ' ' || e.key === 'Enter' || (e.altKey && e.key === 'ArrowDown'))) {
+    e.preventDefault();
+    openSelectMenu(sel);
+  }
+});
+window.addEventListener('resize', () => closeSelectMenu(false));
+window.addEventListener('scroll', e => { if (!selectMenu?.el.contains(e.target)) closeSelectMenu(false); }, { capture: true, passive: true });
+
 async function api(url, body, method = 'POST', signal) {
   const r = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, signal });
   if (!r.ok) {
@@ -249,6 +353,7 @@ function buildControls(host, sections, obj, onChange) {
       }
 
       if (c.t === 'check') el.checked = !!obj[c.k]; else el.value = obj[c.k];
+      if (c.t === 'range') paintRange(el);
       sync();
       el.addEventListener('input', () => {
         obj[c.k] = c.t === 'check' ? el.checked : (c.t === 'range' ? parseFloat(el.value) : el.value);
@@ -349,7 +454,7 @@ const fmtHMS = s => new Date(Math.max(0, Number(s) || 0) * 1000).toISOString().s
 function updateTimeUI(t) {
   const dur = S.job ? (S.job.meta.duration || vid.duration || 0) : 0;
   S.t = Math.max(0, Math.min(dur || 0, t));
-  if (!isScrubbing) $('#scrub').value = S.t;
+  if (!isScrubbing) { $('#scrub').value = S.t; paintRange($('#scrub')); }
   $('#scrubVal').textContent = `${fmtClock(S.t)} / ${fmtClock(dur)}`;
 }
 
@@ -455,6 +560,7 @@ function initJob(job) {
 
   ['#playPause', '#skipBack', '#skipFwd', '#scrub', '#muteBtn', '#vol'].forEach(sel => { $(sel).disabled = false; });
   $('#scrub').max = Math.max(m.duration || 0, 0.1);
+  paintRange($('#scrub'));
   S.t = isVideo ? Math.min(m.duration * .1, 5) : 0;
   updateTimeUI(S.t);
 
@@ -660,17 +766,10 @@ function fitPreviewPanes() {
     frame.style.aspectRatio = `${sourceWidth} / ${sourceHeight}`;
   }
 
-  const outputPanel = $('#outputPanel');
-  const outputStyle = getComputedStyle(outputPanel);
-  const outputWidth = Math.max(0, outputPanel.clientWidth
-    - parseFloat(outputStyle.paddingLeft) - parseFloat(outputStyle.paddingRight));
-  const outputHeight = Math.min(window.innerHeight * 0.27, 520);
+  // size comes from CSS: the stage takes the panel's leftover height (see .output-stage)
   const stageAspect = S.reframe || !S.job || S.job.kind !== 'video' ? 9 / 16 : sourceAspect;
-  const stage = $('#stage');
-  stage.style.aspectRatio = `${stageAspect}`;
+  $('#stage').style.aspectRatio = `${stageAspect}`;
   $('#ovl').style.objectFit = S.reframe ? 'fill' : 'contain';
-  const stageWidth = Math.min(outputWidth, 320, outputHeight * stageAspect);
-  if (stageWidth > 0) stage.style.width = `${stageWidth}px`;
 }
 
 const previewResizeObserver = new ResizeObserver(schedulePreviewResize);
@@ -720,6 +819,7 @@ $('#vol').oninput = e => {
   vid.volume = parseFloat(e.target.value);
   if (vid.volume > 0 && vid.muted) { vid.muted = false; $('#muteBtn').textContent = 'Vol'; }
 };
+paintRange($('#vol'));
 
 const scrub = $('#scrub');
 scrub.addEventListener('pointerdown', () => {
@@ -743,6 +843,7 @@ scrub.addEventListener('pointerup', finishScrub);
 scrub.addEventListener('change', finishScrub);
 
 document.addEventListener('keydown', e => {
+  if (selectMenu) return; // keys belong to the open select menu
   const tag = (document.activeElement && document.activeElement.tagName) || '';
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
@@ -1363,7 +1464,7 @@ function initUpdaterUI(d) {
         : status.state === 'staged' ? 'Restart to Finish' : 'Check for Updates';
       if (status.state === 'staged' && !restartPrompted) {
         restartPrompted = true;
-        if (window.confirm('The update is ready. Restart Subtitle Studio now?')) {
+        if (await confirmDialog({ title: 'Update ready', message: 'The update is ready. Restart Subtitle Studio now?', confirmLabel: 'Restart' })) {
           await d.restart_after_update();
         }
       }
@@ -1404,7 +1505,7 @@ function initUpdaterUI(d) {
     try {
       const status = await d.get_update_status();
       if (status.state === 'staged') {
-        if (window.confirm('Restart Subtitle Studio to finish the update?')) {
+        if (await confirmDialog({ title: 'Update ready', message: 'Restart Subtitle Studio to finish the update?', confirmLabel: 'Restart' })) {
           await d.restart_after_update();
         }
       } else if (status.state === 'available') {
@@ -1501,7 +1602,7 @@ window.addEventListener('pywebviewready', enableDesktopUI);
         saveBtn.textContent = 'Saved!';
         setTimeout(() => { saveBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M11 2H9v3h2V2z"/><path d="M1.5 0h11.586a1 1 0 0 1 .707.293l1.414 1.414a1 1 0 0 1 .293.707V14a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V1a1 1 0 0 1 1-1zM2 1v13h12V3.05L12.95 2H2z"/><path d="M7 14h2v-3H7v3zM5 14h4v-4H5v4z"/></svg> Save'; }, 1500);
       } else {
-        alert('Failed to save project.');
+        showToast('Failed to save project.', 'error');
       }
     };
   }
@@ -1518,9 +1619,9 @@ window.addEventListener('pywebviewready', enableDesktopUI);
     const days = parseInt($('#cleanupDays').value);
     try {
       await api('/api/settings/cleanup', { max_age_days: days }, 'POST');
-      alert('Cleanup settings saved.');
+      showToast('Cleanup settings saved');
     } catch (e) {
-      alert(e.message);
+      showToast(e.message, 'error');
     }
   };
 
@@ -1528,14 +1629,19 @@ window.addEventListener('pywebviewready', enableDesktopUI);
 
   window.deleteJob = async (e, id, name) => {
     e.stopPropagation();
-    if (!confirm(`Delete project "${name}"?`)) return;
-    if (!confirm(`Are you sure? This will permanently delete the folder and all its data.`)) return;
+    const ok = await confirmDialog({
+      title: 'Delete project',
+      message: `This permanently deletes the folder and all its data for "${name}".`,
+      confirmLabel: 'Delete',
+      danger: true
+    });
+    if (!ok) return;
 
     try {
       await api(`/api/jobs/${id}`, null, 'DELETE');
       $('#openJobsBtn').click(); // Refresh list
     } catch (e) {
-      alert('Failed to delete job.');
+      showToast('Failed to delete job.', 'error');
     }
   };
 
@@ -1566,7 +1672,7 @@ window.addEventListener('pywebviewready', enableDesktopUI);
       }
       $('#openJobsBtn').click(); // Refresh list
     } catch (e) {
-      alert(e.message);
+      showToast(e.message, 'error');
     }
   };
   $('#jobsList').addEventListener('dblclick', (ev) => {
@@ -1620,7 +1726,7 @@ window.addEventListener('pywebviewready', enableDesktopUI);
       return job;
     } catch (e) {
       console.error(e);
-      alert('Could not open project.');
+      showToast('Could not open project.', 'error');
     }
   };
 
