@@ -33,15 +33,11 @@ export a finished vertical video or a transparent subtitle overlay.
 
 ## 🖼️ Screenshots
 
-![Subtitle Studio with video layout and subtitle styling controls](docs/images/editor-layout.png)
+![Subtitle Studio editor with video layout, transcript editing and subtitle styling](docs/images/editor-layout.png)
 
-*Set up the video layout and subtitle style in the editor.*
+*Set up the video layout, edit word-level captions and fine-tune the subtitle style in one editor.*
 
-![Subtitle Studio with transcript editing and export controls](docs/images/transcript-export.png)
-
-*Edit word-level captions, fine-tune highlights, and choose an export format.*
-
-*The screenshots use a video from Windah Basudara's YouTube channel as an example.
+*The screenshot uses a video from Windah Basudara's YouTube channel as an example.
 The video and its rights belong to Windah Basudara.*
 
 ## 🚀 Get started
